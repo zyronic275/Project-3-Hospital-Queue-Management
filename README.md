@@ -15,9 +15,9 @@ selamat pagi
 abcdefgh
 halooo
 
-main
-
 
 
 woiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
+
+ok kita coba lagi update sendiri - darrell
 
