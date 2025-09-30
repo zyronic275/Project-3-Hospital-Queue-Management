@@ -9,17 +9,16 @@ test 123 darrell
 
 fhfg
 halooooo saya abelll
-Abel
 
-halooo tesssssssss
 selamat pagi
 
 abcdefgh
 halooo
-main
 
 
 
 woiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
 
 ok kita coba lagi update sendiri - darrell
+
+ikutan nyobaaaaa -abel
