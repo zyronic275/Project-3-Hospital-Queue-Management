@@ -1,6 +1,6 @@
 # hospital_api/models.py
-
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table
+import enum
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, Enum
 from sqlalchemy.orm import relationship
 from .database import Base
 import datetime
@@ -33,18 +33,27 @@ class Doctor(Base):
     services = relationship("Service", secondary=doctor_service_association, back_populates="doctors")
     queues = relationship("Queue", back_populates="doctor")
 
+class QueueStatus(str, enum.Enum):
+    MENUNGGU = "Menunggu"
+    DILAYANI = "Sedang Dilayani"
+    SELESAI = "Selesai"
+
 class Queue(Base):
     __tablename__ = "queues"
     id = Column(Integer, primary_key=True, index=True)
     queue_number = Column(Integer)
     registration_time = Column(DateTime, default=datetime.datetime.utcnow)
     
+    # ▼▼▼ TAMBAHKAN DUA KOLOM INI ▼▼▼
+    status = Column(Enum(QueueStatus), default=QueueStatus.MENUNGGU)
+    visit_notes = Column(Text, nullable=True) # Catatan bisa kosong
+    
     patient_id = Column(Integer, ForeignKey("patients.id"))
     service_id = Column(Integer, ForeignKey("services.id"))
-    doctor_id = Column(Integer, ForeignKey("doctors.id")) # Dokter yang ditugaskan oleh sistem
+    doctor_id = Column(Integer, ForeignKey("doctors.id"))
 
     patient = relationship("Patient", back_populates="queues")
-    service = relationship("Service", back_populates="queues") # Single service per queue entry
+    service = relationship("Service", back_populates="queues")
     doctor = relationship("Doctor", back_populates="queues")
 
 # Tambahan: Hubungan Service ke Queue

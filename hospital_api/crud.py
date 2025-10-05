@@ -98,6 +98,15 @@ def delete_doctor(db: Session, doctor_id: int):
         return db_doctor
     return None
 
+def update_doctor(db: Session, doctor_id: int, doctor: schemas.DoctorBase):
+    db_doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+    if db_doctor:
+        db_doctor.name = doctor.name
+        db.commit()
+        db.refresh(db_doctor)
+        return db_doctor
+    return None
+
 # ==================================
 # === "Read" Functions for Queue ===
 # ==================================

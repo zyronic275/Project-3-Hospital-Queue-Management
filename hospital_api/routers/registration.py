@@ -23,6 +23,7 @@ def register_patient_for_services(request: schemas.QueueRegistrationRequest, db:
         db.refresh(patient)
 
     response_tickets = []
+    today = date.today()
 
     # 2. Loop sebanyak penyakit/layanan yang dipilih
     for service_id in request.service_ids:
@@ -30,13 +31,26 @@ def register_patient_for_services(request: schemas.QueueRegistrationRequest, db:
         if not service:
             raise HTTPException(status_code=404, detail=f"Service with ID {service_id} not found")
         
-        # 3. Sistem memilih dokter (logika sederhana: pilih dokter pertama yang tersedia)
+        # Pastikan ada dokter yang tersedia untuk layanan ini
         if not service.doctors:
             raise HTTPException(status_code=400, detail=f"No doctors available for service '{service.name}'")
-        assigned_doctor = service.doctors[0]
+
+        # --- LOGIKA BARU DIMULAI DI SINI ---
+
+        # 3. Hitung berapa pasien yang sudah ada di antrean layanan ini HARI INI
+        todays_queue_count = db.query(models.Queue).filter(
+            models.Queue.service_id == service.id,
+            func.date(models.Queue.registration_time) == today
+        ).count()
+
+        # 4. Gunakan sisa bagi (modulo) untuk memilih dokter secara bergiliran
+        num_doctors = len(service.doctors)
+        doctor_index = todays_queue_count % num_doctors
+        assigned_doctor = service.doctors[doctor_index]
+
+        # --- LOGIKA BARU SELESAI DI SINI ---
 
         # Dapatkan nomor antrean baru untuk layanan ini
-        today = date.today()
         max_queue = db.query(func.max(models.Queue.queue_number)).filter(
             models.Queue.service_id == service_id,
             func.date(models.Queue.registration_time) == today
