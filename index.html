@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pendaftaran Pasien (Multi-Select)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { margin-bottom: 25px; color: #333; }
+        .form-group { margin-bottom: 20px; text-align: left; }
+        label { font-weight: bold; display: block; margin-bottom: 8px; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        select[multiple] { height: 120px; }
+        small { color: #666; display: block; margin-top: 5px; }
+        button { width: 100%; padding: 14px; background-color: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; transition: background-color 0.2s; }
+        button:hover { background-color: #0056b3; }
+        #result { margin-top: 25px; text-align: left; background-color: #e9f5ff; border: 1px solid #b8d6f3; padding: 15px; border-radius: 8px; line-height: 1.6; }
+        #result ul { list-style-type: none; padding-left: 0; }
+        #result li { background-color: #fff; padding: 10px; border-radius: 5px; margin-bottom: 10px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Registrasi Layanan Pasien</h1>
+        <form id="registrationForm">
+            <div class="form-group">
+                <label for="patient_name">Nama Pasien:</label>
+                <input type="text" id="patient_name" placeholder="Masukkan nama Anda" required>
+            </div>
+            <div class="form-group">
+                <label for="service_select">Pilih Layanan/Penyakit:</label>
+                <select multiple id="service_select" required>
+                    <option disabled>Memuat layanan...</option>
+                </select>
+                <small>Tahan Ctrl (atau Cmd di Mac) untuk memilih lebih dari satu.</small>
+            </div>
+            <button type="submit">Dapatkan Nomor Antrean</button>
+        </form>
+        <div id="result" style="display:none;"></div>
+    </div>
+
+    <script>
+        const selectElement = document.getElementById('service_select');
+        const form = document.getElementById('registrationForm');
+        const resultDiv = document.getElementById('result');
+
+        // FUNGSI BARU: Saat halaman dimuat, ambil daftar layanan dari API
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/admin/services/');
+                if (!response.ok) throw new Error('Gagal mengambil data layanan.');
+                
+                const services = await response.json();
+                selectElement.innerHTML = ''; // Kosongkan opsi "Memuat..."
+
+                if (services.length === 0) {
+                    selectElement.innerHTML = '<option disabled>Tidak ada layanan tersedia.</option>';
+                } else {
+                    services.forEach(service => {
+                        const option = document.createElement('option');
+                        option.value = service.id;
+                        option.textContent = service.name;
+                        selectElement.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to fetch services:', error);
+                selectElement.innerHTML = `<option disabled>Error: ${error.message}</option>`;
+            }
+        });
+
+        // FUNGSI YANG DIMODIFIKASI: Saat form disubmit
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = "Memproses...";
+            resultDiv.style.color = '#555';
+
+            const patientName = document.getElementById('patient_name').value;
+
+            // Mengambil semua ID dari opsi yang dipilih di kotak multi-select
+            const selectedOptions = Array.from(selectElement.selectedOptions);
+            const serviceIds = selectedOptions.map(option => parseInt(option.value));
+
+            if (serviceIds.length === 0) {
+                resultDiv.style.color = 'red';
+                resultDiv.innerText = 'Error: Mohon pilih setidaknya satu layanan.';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        patient_name: patientName,
+                        service_ids: serviceIds,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Terjadi kesalahan');
+                }
+
+                const data = await response.json();
+                
+                resultDiv.style.color = '#333';
+                let ticketsHtml = data.tickets.map(ticket => 
+                    `<li>
+                        <strong>Layanan:</strong> ${ticket.service.name} <br>
+                        <strong>No. Antrean:</strong> ${ticket.queue_number} <br>
+                        <strong>Dokter:</strong> ${ticket.doctor.name}
+                    </li>`
+                ).join('');
+
+                resultDiv.innerHTML = `
+                    <p style="text-align:center; font-weight:bold;">Pendaftaran untuk ${data.patient.name} Berhasil!</p>
+                    <p>Anda mendapatkan tiket antrean berikut:</p>
+                    <ul>${ticketsHtml}</ul>
+                `;
+
+            } catch (error) {
+                resultDiv.style.color = 'red';
+                resultDiv.innerText = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
