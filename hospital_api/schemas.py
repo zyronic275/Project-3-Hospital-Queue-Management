@@ -1,21 +1,19 @@
 # hospital_api/schemas.py
 
-from .models import QueueStatus
 from pydantic import BaseModel
 from typing import List, Optional
 import datetime
+from .models import QueueStatus # Import the enum from models
 
-# --- Service Schemas ---
-# Harus didefinisikan sebelum Doctor agar bisa digunakan di dalam Doctor
-class ServiceBase(BaseModel):
+# --- Clinic Schemas ---
+class ClinicBase(BaseModel):
     name: str
 
-class ServiceCreate(ServiceBase):
-    prefix: str
+class ClinicCreate(ClinicBase):
+    pass
 
-class Service(ServiceBase):
+class Clinic(ClinicBase):
     id: int
-    prefix: str # <-- TAMBAHKAN BARIS INI
     
     class Config:
         from_attributes = True
@@ -23,59 +21,36 @@ class Service(ServiceBase):
 # --- Doctor Schemas ---
 class DoctorBase(BaseModel):
     name: str
+    specialization: str
 
-# ▼▼▼ BAGIAN YANG DIPERBAIKI ADA DI SINI ▼▼▼
+class DoctorCreate(DoctorBase):
+    clinic_id: int
+
 class Doctor(DoctorBase):
     id: int
-    services: List[Service] = [] # Menambahkan kolom untuk daftar layanan
-
+    clinic_id: int
+    
     class Config:
         from_attributes = True
-
-# --- Patient Schemas ---
-class PatientBase(BaseModel):
-    name: str
-
-class Patient(PatientBase):
-    id: int
-    class Config:
-        from_attributes = True
-
-# --- Queue & Registration Schemas ---
-class QueueRegistrationRequest(BaseModel):
+        
+# --- Queue (Patient Registration & Visit History) Schemas ---
+class QueueBase(BaseModel):
     patient_name: str
-    service_ids: List[int]
 
-class Queue(BaseModel):
+class QueueCreate(QueueBase):
+    clinic_id: int
+    doctor_id: int
+    
+class QueueUpdateStatus(BaseModel):
+    status: QueueStatus
+
+class Queue(QueueBase):
     id: int
-    queue_id_display: str
     queue_number: int
     status: QueueStatus
-    visit_notes: Optional[str] = None
-    patient: Patient
-    service: Service
-    doctor: Doctor
-
+    registration_time: datetime.datetime
+    clinic_id: int
+    doctor_id: int
+    
     class Config:
         from_attributes = True
-
-class QueueTicket(BaseModel):
-    id: int # Tambahkan ID agar bisa di-query nanti
-    queue_id_display: str
-    queue_number: int
-    status: QueueStatus
-    service: Service
-    doctor: Doctor
-    patient: Patient # Tambahkan data pasien agar lebih informatif
-    visit_notes: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-class QueueRegistrationResponse(BaseModel):
-    patient: Patient
-    tickets: List[QueueTicket]
-
-class QueueUpdate(BaseModel):
-    status: QueueStatus
-    visit_notes: Optional[str] = None
