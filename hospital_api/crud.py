@@ -1,7 +1,7 @@
 # hospital_api/crud.py
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from datetime import date
 from . import models, schemas
 
@@ -36,7 +36,8 @@ def get_services(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Service).offset(skip).limit(limit).all()
 
 def create_service(db: Session, service: schemas.ServiceCreate):
-    db_service = models.Service(name=service.name)
+    # Perbarui baris ini untuk menyertakan 'prefix'
+    db_service = models.Service(name=service.name, prefix=service.prefix)
     db.add(db_service)
     db.commit()
     db.refresh(db_service)
@@ -122,3 +123,28 @@ def get_todays_queues_by_service(db: Session, service_id: int):
 def get_patient_history(db: Session, patient_id: int):
     """Mendapatkan seluruh riwayat kunjungan seorang pasien."""
     return db.query(models.Queue).filter(models.Queue.patient_id == patient_id).all()
+
+def update_queue(db: Session, queue_id: int, update_data: schemas.QueueUpdate):
+    db_queue = db.query(models.Queue).filter(models.Queue.id == queue_id).first()
+    if db_queue:
+        db_queue.status = update_data.status
+        if update_data.visit_notes is not None:
+            db_queue.visit_notes = update_data.visit_notes
+        db.commit()
+        db.refresh(db_queue)
+        return db_queue
+    return None
+
+def get_queue_density_today(db: Session):
+    """Memantau kepadatan antrean hari ini per layanan."""
+    today = date.today()
+    result = db.query(
+        models.Service.name,
+        func.count(models.Queue.id).label("total_patients"),
+        func.sum(case((models.Queue.status == 'Menunggu', 1), else_=0)).label("waiting"),
+        func.sum(case((models.Queue.status == 'Selesai', 1), else_=0)).label("finished")
+    ).join(models.Queue, models.Service.id == models.Queue.service_id).filter(
+        func.date(models.Queue.registration_time) == today
+    ).group_by(models.Service.name).all()
+    # Perlu import 'case' dari sqlalchemy
+    return result

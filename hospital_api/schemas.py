@@ -1,5 +1,6 @@
 # hospital_api/schemas.py
 
+from .models import QueueStatus
 from pydantic import BaseModel
 from typing import List, Optional
 import datetime
@@ -10,10 +11,12 @@ class ServiceBase(BaseModel):
     name: str
 
 class ServiceCreate(ServiceBase):
-    pass
+    prefix: str
 
 class Service(ServiceBase):
     id: int
+    prefix: str # <-- TAMBAHKAN BARIS INI
+    
     class Config:
         from_attributes = True
 
@@ -43,11 +46,36 @@ class QueueRegistrationRequest(BaseModel):
     patient_name: str
     service_ids: List[int]
 
-class QueueTicket(BaseModel):
+class Queue(BaseModel):
+    id: int
+    queue_id_display: str
     queue_number: int
+    status: QueueStatus
+    visit_notes: Optional[str] = None
+    patient: Patient
     service: Service
-    doctor: Doctor # Skema Doctor yang digunakan di sini sekarang sudah lengkap
+    doctor: Doctor
+
+    class Config:
+        from_attributes = True
+
+class QueueTicket(BaseModel):
+    id: int # Tambahkan ID agar bisa di-query nanti
+    queue_id_display: str
+    queue_number: int
+    status: QueueStatus
+    service: Service
+    doctor: Doctor
+    patient: Patient # Tambahkan data pasien agar lebih informatif
+    visit_notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 class QueueRegistrationResponse(BaseModel):
     patient: Patient
     tickets: List[QueueTicket]
+
+class QueueUpdate(BaseModel):
+    status: QueueStatus
+    visit_notes: Optional[str] = None

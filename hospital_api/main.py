@@ -5,17 +5,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import models
 from .database import engine
 
-# HANYA IMPORT ROUTER YANG BARU
-from .routers import registration, admin
+# Import semua router yang sudah kita buat
+from .routers import registration, admin, queue_management, reports
 
-
-# Perintah ini akan membuat semua tabel baru di database Anda
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Hospital Queue Management API (Revised)",
-    description="API for patient registration based on selected services/diseases.",
-    version="2.0.0"
+    title="Hospital Queue Management API (Full Version)",
+    description="API lengkap untuk manajemen antrean, admin, dokter, dan laporan.",
+    version="3.0.0"
 )
 
 # Pengaturan CORS
@@ -28,10 +26,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# HANYA SERTAKAN ROUTER YANG BARU
+# Sertakan semua router
 app.include_router(registration.router)
 app.include_router(admin.router)
+app.include_router(queue_management.router)
+app.include_router(reports.router)
 
 @app.get("/", tags=["Root"])
 def read_root():
-    return {"message": "Welcome to the Revised Hospital Queue Management API"}
+    return {"message": "Welcome to the Full Hospital Queue Management API"}
