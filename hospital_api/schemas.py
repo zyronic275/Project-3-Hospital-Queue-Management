@@ -1,9 +1,13 @@
 # hospital_api/schemas.py
 
 from pydantic import BaseModel
-from typing import List, Optional
-import datetime
-from .models import QueueStatus # Import the enum from models
+from datetime import datetime
+import enum
+
+class QueueStatus(str, enum.Enum):
+    MENUNGGU = "menunggu"
+    DILAYANI = "sedang dilayani"
+    SELESAI = "selesai"
 
 # --- Clinic Schemas ---
 class ClinicBase(BaseModel):
@@ -14,9 +18,6 @@ class ClinicCreate(ClinicBase):
 
 class Clinic(ClinicBase):
     id: int
-    
-    class Config:
-        from_attributes = True
 
 # --- Doctor Schemas ---
 class DoctorBase(BaseModel):
@@ -29,17 +30,13 @@ class DoctorCreate(DoctorBase):
 class Doctor(DoctorBase):
     id: int
     clinic_id: int
-    
-    class Config:
-        from_attributes = True
         
-# --- Queue (Patient Registration & Visit History) Schemas ---
+# --- Queue Schemas ---
 class QueueBase(BaseModel):
     patient_name: str
 
 class QueueCreate(QueueBase):
     clinic_id: int
-    doctor_id: int
     
 class QueueUpdateStatus(BaseModel):
     status: QueueStatus
@@ -48,9 +45,6 @@ class Queue(QueueBase):
     id: int
     queue_number: int
     status: QueueStatus
-    registration_time: datetime.datetime
+    registration_time: datetime
     clinic_id: int
     doctor_id: int
-    
-    class Config:
-        from_attributes = True
