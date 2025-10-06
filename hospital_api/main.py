@@ -1,12 +1,10 @@
-# hospital_api/main.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models
 from .database import engine
 
 # Import semua router yang sudah kita buat
-from .routers import registration, admin, queue_management, reports
+from .routers import registration, admin, queue_management, reports, doctor_view
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -16,7 +14,7 @@ app = FastAPI(
     version="3.0.0"
 )
 
-# Pengaturan CORS
+# Pengaturan CORS (tetap sama)
 origins = ["null"]
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +29,8 @@ app.include_router(registration.router)
 app.include_router(admin.router)
 app.include_router(queue_management.router)
 app.include_router(reports.router)
+app.include_router(doctor_view.router)
+
 
 @app.get("/", tags=["Root"])
 def read_root():

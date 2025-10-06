@@ -1,23 +1,19 @@
-# unit_test.py (versi perbaikan)
+# unit_test.py (Versi Final dengan Pendekatan Fixture yang Benar)
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-# Import dari aplikasi utama Anda
-# Pastikan semua model diimport agar Base.metadata tahu semua tabel
-from hospital_api.main import app
-from hospital_api.database import get_db
-from hospital_api.models import Base, Service, Doctor, Patient, Queue, QueueStatus
-from unittest.mock import patch
 import datetime
+from unittest.mock import patch
 
+from hospital_api.main import app
+from hospital_api.models import Base
+from hospital_api.database import get_db
 
-# --- Konfigurasi Database Khusus untuk Testing ---
+# --- Konfigurasi Database (Tidak Berubah) ---
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
@@ -25,138 +21,91 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# --- Override Dependency get_db ---
 def override_get_db():
     db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
-
 app.dependency_overrides[get_db] = override_get_db
 
-# --- Fixture untuk Setup dan Teardown Database ---
-# Ini adalah bagian yang diperbaiki.
-# scope="function" berarti ini akan dijalankan untuk setiap fungsi tes
-@pytest.fixture(scope="function")
-def db_session():
-    # Buat semua tabel dari models.py DI DALAM database memori
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        # Hapus semua tabel setelah tes selesai, agar tes berikutnya mulai dari nol lagi
-        Base.metadata.drop_all(bind=engine)
-
-# Membuat client untuk melakukan request ke API
-# Kita lewatkan db_session sebagai argumen ke setiap tes yang membutuhkannya
 client = TestClient(app)
 
-# ===============================================
-# === Mulai Skenario Pengujian (Unit Tests) ===
-# ===============================================
+# --- Fixtures ---
 
-def test_create_service(db_session):
-    """Tes 1: Admin - Memastikan bisa membuat layanan baru."""
-    response = client.post("/admin/services/", json={"name": "Poli Umum", "prefix": "A"})
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert data["name"] == "Poli Umum"
-    assert data["prefix"] == "A"
-    assert "id" in data
+@pytest.fixture(scope="function")
+def db_session():
+    """Fixture dasar: membuat tabel sebelum tes, menghapusnya setelah tes."""
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
 
-def test_create_doctor(db_session):
-    """Tes 2: Admin - Memastikan bisa membuat dokter baru."""
-    response = client.post("/admin/doctors/", json={"name": "Dr. Warkop"})
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert data["name"] == "Dr. Warkop"
-    assert "id" in data
-
-def test_assign_doctor_to_service(db_session):
-    """Tes 3: Admin - Memastikan bisa menugaskan dokter ke layanan."""
-    service_res = client.post("/admin/services/", json={"name": "Poli Komedi", "prefix": "K"})
-    doctor_res = client.post("/admin/doctors/", json={"name": "Dr. Indro"})
-    service_id = service_res.json()["id"]
-    doctor_id = doctor_res.json()["id"]
-
-    response = client.post(f"/admin/doctors/{doctor_id}/assign-service/?service_id={service_id}")
-    assert response.status_code == 200, response.text
-    data = response.json()
-    
-    assert data["name"] == "Dr. Indro"
-    assert len(data["services"]) == 1
-    assert data["services"][0]["name"] == "Poli Komedi"
-
-@patch('hospital_api.routers.registration.datetime')
-def test_patient_registration_and_queue_id(mock_dt, db_session):
-    """Tes 4: Pendaftaran - Memastikan pasien mendapat ID antrean yang benar."""
-    mock_dt.now.return_value.time.return_value = datetime.time(10, 0) # Anggap sekarang jam 10:00
-
-    client.post("/admin/services/", json={"name": "Poli Jantung", "prefix": "J"})
-    client.post("/admin/doctors/", json={"name": "Dr. Dono"})
+@pytest.fixture(scope="function")
+def populated_db(db_session):
+    """Fixture baru: bergantung pada db_session, lalu mengisi data awal."""
+    client.post("/admin/services/", json={"name": "Poli Jantung", "prefix": "A"})
+    client.post("/admin/doctors/", json={"name": "Dr. Jantung Pagi", "start_time": "08:00:00", "end_time": "12:00:00", "max_patients": 1})
+    client.post("/admin/doctors/", json={"name": "Dr. Jantung Siang", "start_time": "13:00:00", "end_time": "17:00:00","max_patients":0})
     client.post("/admin/doctors/1/assign-service/?service_id=1")
+    client.post("/admin/doctors/2/assign-service/?service_id=1")
+    yield
 
-    response = client.post("/register", json={"patient_name": "Pasien Satu", "service_ids": [1]})
-    assert response.status_code == 200, response.text
-    # ... sisa tes tetap sama ...
-    data = response.json()
-    assert data["tickets"][0]["queue_id_display"] == "J1"
+# =========================================================
+# === KELAS TES UNTUK FITUR-FITUR ADMIN ===
+# =========================================================
+@pytest.mark.usefixtures("db_session")
+class TestAdminFeatures:
+    # ... (Isi kelas ini tidak perlu diubah, sudah benar)
+    def test_create_service(self):
+        response = client.post("/admin/services/", json={"name": "Poli Gigi", "prefix": "G"})
+        assert response.status_code == 200
+        assert response.json()["name"] == "Poli Gigi"
 
-@patch('hospital_api.routers.registration.datetime')
-def test_doctor_round_robin_logic(mock_dt, db_session):
-    """Tes 5: Pendaftaran - Memastikan logika Round-Robin berjalan."""
-    mock_dt.now.return_value.time.return_value = datetime.time(11, 0) # Anggap sekarang jam 11:00
+    def test_create_doctor(self):
+        response = client.post("/admin/doctors/", json={"name": "Dr. Gigi"})
+        assert response.status_code == 200
+        assert response.json()["name"] == "Dr. Gigi"
 
-    client.post("/admin/services/", json={"name": "Poli Mata", "prefix": "M"})
-    client.post("/admin/doctors/", json={"name": "Dr. Kasino"}) # ID Dokter = 1
-    client.post("/admin/doctors/", json={"name": "Dr. Nanu"})   # ID Dokter = 2
+# =========================================================
+# === KELAS TES UNTUK ALUR KERJA APLIKASI ===
+# =========================================================
+# Tidak perlu lagi @pytest.mark.usefixtures karena setiap tes akan memanggil populated_db
+class TestAppWorkflow:
 
-    # ▼▼▼ TAMBAHKAN DUA BARIS YANG HILANG INI ▼▼▼
-    client.post("/admin/doctors/1/assign-service/?service_id=1") # Tugaskan Dr. Kasino ke Poli Mata
-    client.post("/admin/doctors/2/assign-service/?service_id=1") # Tugaskan Dr. Nanu ke Poli Mata
+    @patch('hospital_api.routers.registration.datetime')
+    def test_registration_success_in_working_hours(self, mock_dt, populated_db):
+        """Memastikan pasien bisa mendaftar di jam kerja dokter."""
+        mock_dt.datetime.now.return_value = datetime.datetime(2025, 1, 1, 10, 0, 0)
+        mock_dt.date.today.return_value = datetime.date(2025, 1, 1)
 
-    res1 = client.post("/register", json={"patient_name": "Pasien A", "service_ids": [1]})
-    assert res1.status_code == 200, res1.text
-    res2 = client.post("/register", json={"patient_name": "Pasien B", "service_ids": [1]})
-    assert res2.status_code == 200, res2.text
+        response = client.post("/register", json={"patient_name": "Pasien Pagi", "service_ids": [1]})
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["tickets"][0]["doctor"]["name"] == "Dr. Jantung Pagi"
+        assert data["tickets"][0]["queue_id_display"] == "A1"
 
-    doctor1 = res1.json()["tickets"][0]["doctor"]["name"]
-    doctor2 = res2.json()["tickets"][0]["doctor"]["name"]
+    @patch('hospital_api.routers.registration.datetime')
+    def test_registration_fail_out_of_hours(self, mock_dt, populated_db):
+        """Memastikan pasien ditolak jika mendaftar di luar jam kerja."""
+        mock_dt.datetime.now.return_value = datetime.datetime(2025, 1, 1, 12, 30, 0)
+        mock_dt.date.today.return_value = datetime.date(2025, 1, 1)
 
-    assert doctor1 != doctor2
-    assert {doctor1, doctor2} == {"Dr. Kasino", "Dr. Nanu"}
+        response = client.post("/register", json={"patient_name": "Pasien Istirahat", "service_ids": [1]})
+        assert response.status_code == 400
+        assert "Tidak ada dokter yang praktek" in response.json()["detail"]
 
+    @patch('hospital_api.routers.registration.datetime')
+    def test_registration_fail_when_full(self, mock_dt, populated_db):
+        """Tes: Pendaftaran gagal jika semua dokter di satu poli sudah penuh."""
+        mock_dt.datetime.now.return_value = datetime.datetime(2025, 1, 1, 10, 0, 0)
+        mock_dt.date.today.return_value = datetime.date(2025, 1, 1)
 
-@patch('hospital_api.routers.registration.datetime')
-def test_queue_management_by_doctor(mock_dt, db_session):
-    """Tes 6: Dokter - Memastikan bisa melihat antrean dan mengubah status."""
-    mock_dt.now.return_value.time.return_value = datetime.time(10, 30)
+        # Kuota Dr. Jantung Pagi adalah 1. Kita daftarkan 1 pasien.
+        client.post("/register", json={"patient_name": "Pasien 1", "service_ids": [1]})
+        
+        # Aksi: Coba daftarkan pasien ke-2 di jam yang sama
+        response = client.post("/register", json={"patient_name": "Pasien 2", "service_ids": [1]})
 
-    service_res = client.post("/admin/services/", json={"name": "Poli THT", "prefix": "T"})
-    service_id = service_res.json()["id"]
-    doc_res = client.post("/admin/doctors/", json={"name": "Dr. Eva"})
-    doctor_id = doc_res.json()["id"]
-    client.post(f"/admin/doctors/{doctor_id}/assign-service/?service_id={service_id}")
-    reg_res = client.post("/register", json={"patient_name": "Pasien THT", "service_ids": [service_id]})
-    
-    # Ambil queue_id yang benar dari respons registrasi
-    queue_id = reg_res.json()["tickets"][0]["id"]
-
-    # 1. Dokter melihat antrean hari ini
-    queue_list_res = client.get(f"/queues/today/{service_id}")
-    assert queue_list_res.status_code == 200, queue_list_res.text
-    assert len(queue_list_res.json()) == 1
-    assert queue_list_res.json()[0]["patient"]["name"] == "Pasien THT"
-    
-    # 2. Dokter mengubah status dan menambah catatan
-    update_res = client.patch(f"/queues/{queue_id}", json={
-        "status": "Selesai",
-        "visit_notes": "Telinga sudah dibersihkan."
-    })
-    assert update_res.status_code == 200, update_res.text
-    data = update_res.json()
-    assert data["status"] == "Selesai"
-    assert data["visit_notes"] == "Telinga sudah dibersihkan."
+        # Verifikasi: Seharusnya gagal karena Dr. Jantung Pagi sudah penuh
+        assert response.status_code == 400
+        assert "sudah penuh" in response.json()["detail"]

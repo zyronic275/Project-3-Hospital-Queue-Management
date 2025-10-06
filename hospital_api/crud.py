@@ -1,7 +1,8 @@
 # hospital_api/crud.py
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func, case, and_
+import datetime
 from datetime import date
 from . import models, schemas
 
@@ -101,12 +102,22 @@ def delete_doctor(db: Session, doctor_id: int):
 
 def update_doctor(db: Session, doctor_id: int, doctor: schemas.DoctorBase):
     db_doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
-    if db_doctor:
-        db_doctor.name = doctor.name
-        db.commit()
-        db.refresh(db_doctor)
-        return db_doctor
-    return None
+
+    if not db_doctor:
+        return None # Kembalikan None jika dokter tidak ditemukan
+
+    # Ambil data dari Pydantic schema
+    update_data = doctor.model_dump(exclude_unset=True)
+
+    # Lakukan update untuk setiap field yang diberikan
+    for key, value in update_data.items():
+        setattr(db_doctor, key, value)
+
+    db.add(db_doctor)
+    db.commit()
+    db.refresh(db_doctor)
+
+    return db_doctor
 
 # ==================================
 # === "Read" Functions for Queue ===
@@ -137,7 +148,7 @@ def update_queue(db: Session, queue_id: int, update_data: schemas.QueueUpdate):
 
 def get_queue_density_today(db: Session):
     """Memantau kepadatan antrean hari ini per layanan."""
-    today = date.today()
+    today = datetime.date.today()
     result = db.query(
         models.Service.name,
         func.count(models.Queue.id).label("total_patients"),
@@ -146,5 +157,54 @@ def get_queue_density_today(db: Session):
     ).join(models.Queue, models.Service.id == models.Queue.service_id).filter(
         func.date(models.Queue.registration_time) == today
     ).group_by(models.Service.name).all()
-    # Perlu import 'case' dari sqlalchemy
     return result
+
+def update_queue(db: Session, queue_id: int, update_data: schemas.QueueUpdate):
+    db_queue = db.query(models.Queue).filter(models.Queue.id == queue_id).first()
+    if db_queue:
+        db_queue.status = update_data.status
+        if update_data.visit_notes is not None:
+            db_queue.visit_notes = update_data.visit_notes
+        db.commit()
+        db.refresh(db_queue)
+        return db_queue
+    return None
+
+def get_queue_density_today(db: Session):
+    """Memantau kepadatan antrean hari ini per layanan dengan detail status."""
+    today = datetime.date.today()
+    
+    # Query untuk mendapatkan data mentah dari database
+    raw_density_data = db.query(
+        models.Service.name,
+        func.count(models.Queue.id).label("total_patients"),
+        func.sum(case((models.Queue.status == 'Menunggu', 1), else_=0)).label("waiting"),
+        func.sum(case((models.Queue.status == 'Sedang Dilayani', 1), else_=0)).label("in_service"),
+        func.sum(case((models.Queue.status == 'Selesai', 1), else_=0)).label("finished")
+    ).outerjoin(models.Queue, and_(
+        models.Service.id == models.Queue.service_id,
+        func.date(models.Queue.registration_time) == today
+    )).group_by(models.Service.name).order_by(models.Service.name).all()
+    # (perlu import 'and_' dari sqlalchemy)
+
+    # Proses data mentah menjadi format schema yang kita inginkan
+    density_list = []
+    hospital_total = 0
+    for row in raw_density_data:
+        hospital_total += row.total_patients
+        service_data = schemas.ServiceDensity(
+            service_name=row[0],
+            total_patients_today=row.total_patients,
+            waiting=row.waiting,
+            in_service=row.in_service,
+            finished=row.finished
+        )
+        density_list.append(service_data)
+
+    report = schemas.DensityReport(
+        report_date=today,
+        hospital_total_patients_today=hospital_total,
+        density_per_service=density_list
+    )
+    
+    return report

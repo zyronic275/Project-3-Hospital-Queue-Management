@@ -110,7 +110,7 @@
                 let ticketsHtml = data.tickets.map(ticket => 
                     `<li>
                         <strong>Layanan:</strong> ${ticket.service.name} <br>
-                        <strong>No. Antrean:</strong> ${ticket.queue_number} <br>
+                        <strong>No. Antrean:</strong> ${ticket.queue_id_display} <br>
                         <strong>Dokter:</strong> ${ticket.doctor.name}
                     </li>`
                 ).join('');
