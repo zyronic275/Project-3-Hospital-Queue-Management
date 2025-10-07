@@ -1,141 +1,140 @@
-# main.py
+import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 
-# -----------------------------------------------------
-# 1. INISIALISASI APLIKASI
-# -----------------------------------------------------
-app = FastAPI(
-    title="Sistem Antrean Rumah Sakit",
-    description="API untuk mengelola antrean pasien berdasarkan klinik dan dokter.",
-    version="1.0.0"
-)
+# --- Basis Data In-Memory ---
+# Jumlah dokter sekarang ditambahkan menjadi dua per poli.
 
-# -----------------------------------------------------
-# 2. "IN-MEMORY DATABASE" (DATA DISIMPAN DI VARIABEL)
-# -----------------------------------------------------
-# Data ini akan reset setiap kali aplikasi direstart.
+db: Dict[str, List[Dict[str, Any]]] = {
+    "services": [
+        {"id": 1, "name": "Poli Umum", "prefix": "A"},
+        {"id": 2, "name": "Poli Gigi", "prefix": "B"},
+        {"id": 3, "name": "Poli Anak", "prefix": "C"},
+        {"id": 4, "name": "Laboratorium", "prefix": "D"},
+    ],
+    "doctors": [
+        # Dua dokter untuk Poli Umum (ID Layanan: 1)
+        {"id": 1, "name": "Dr. Budi Santoso", "services": [1]},
+        {"id": 5, "name": "Dr. Elara Vance", "services": [1]},
 
-# Data Master Klinik
-CLINICS_DATA = [
-    {"id": 1, "name": "Klinik Gizi", "code": "A"},
-    {"id": 2, "name": "Klinik Gigi", "code": "B"},
-    {"id": 3, "name": "Klinik Umum", "code": "C"},
-]
+        # Dua dokter untuk Poli Gigi (ID Layanan: 2)
+        {"id": 2, "name": "Drg. Aura Salsabila", "services": [2]},
+        {"id": 6, "name": "Drg. Finnian Gale", "services": [2]},
+        
+        # Dua dokter untuk Poli Anak (ID Layanan: 3)
+        {"id": 3, "name": "Dr. Candra Wijaya", "services": [3]},
+        {"id": 7, "name": "Dr. Lyra Solstice", "services": [3]},
 
-# Data Master Dokter (2 dokter per klinik)
-DOCTORS_DATA = [
-    # Dokter untuk Klinik Gizi (clinic_id: 1)
-    {"id": 101, "name": "Dr. Amanda Puspita, Sp.GK", "clinic_id": 1},
-    {"id": 102, "name": "Dr. Bayu Wijaya, Sp.GK", "clinic_id": 1},
-    
-    # Dokter untuk Klinik Gigi (clinic_id: 2)
-    {"id": 201, "name": "Dr. Citra Lestari, Sp.KGA", "clinic_id": 2},
-    {"id": 202, "name": "Dr. Dian Permana, Sp.Ort", "clinic_id": 2},
+        # Dua dokter untuk Laboratorium (ID Layanan: 4)
+        {"id": 4, "name": "Dr. Dita Amelia", "services": [4]},
+        {"id": 8, "name": "Dr. Ronan Petrova", "services": [4]},
+    ],
+    "patients": [],
+    "queues": []
+}
 
-    # Dokter untuk Klinik Umum (clinic_id: 3)
-    {"id": 301, "name": "Dr. Eko Prasetyo", "clinic_id": 3},
-    {"id": 302, "name": "Dr. Fina Rahmawati", "clinic_id": 3},
-]
-
-# Penyimpan nomor antrean terakhir untuk setiap klinik
-# Key adalah clinic_id, Value adalah nomor urut terakhir
-QUEUE_COUNTERS = {clinic["id"]: 0 for clinic in CLINICS_DATA}
-
-# Penyimpan data antrean yang sudah diambil
-PATIENT_QUEUES = []
-
-# -----------------------------------------------------
-# 3. MODEL DATA (PYDANTIC)
-# -----------------------------------------------------
-# Model untuk request pengambilan nomor antrean
-class QueueRequest(BaseModel):
-    patient_name: str
-    clinic_id: int
-    doctor_id: int
-
-# Model untuk response data dokter, klinik, dan antrean
-class Clinic(BaseModel):
+# --- Model Pydantic (Tidak ada perubahan) ---
+class Service(BaseModel):
     id: int
     name: str
-    code: str
 
 class Doctor(BaseModel):
     id: int
     name: str
-    clinic_id: int
+    services: List[int]
 
-class QueueTicket(BaseModel):
-    queue_number: str
-    patient_name: str
-    clinic: Clinic
+class Patient(BaseModel):
+    id: int
+    name: str
+
+class Ticket(BaseModel):
+    service: Service
     doctor: Doctor
+    queue_number: str
 
-# -----------------------------------------------------
-# 4. ENDPOINTS API
-# -----------------------------------------------------
+class RegistrationRequest(BaseModel):
+    patient_name: str
+    service_ids: List[int]
+    doctor_id: Optional[int] = None
 
-@app.get("/", tags=["Home"])
-async def read_root():
-    """Endpoint utama untuk mengecek apakah API berjalan."""
-    return {"message": "Selamat datang di API Sistem Antrean Rumah Sakit"}
+class RegistrationResponse(BaseModel):
+    patient: Patient
+    tickets: List[Ticket]
 
-# --- Endpoint untuk Flow Pengambilan Antrean ---
+# --- Aplikasi FastAPI ---
+app = FastAPI()
 
-@app.get("/clinics", response_model=List[Clinic], tags=["Antrean"])
-async def get_all_clinics():
-    """
-    Langkah 1: Mendapatkan daftar semua klinik yang tersedia.
-    """
-    return CLINICS_DATA
+@app.get("/admin/services/", response_model=List[Service])
+async def get_services():
+    return db["services"]
 
-@app.get("/clinics/{clinic_id}/doctors", response_model=List[Doctor], tags=["Antrean"])
-async def get_doctors_by_clinic(clinic_id: int):
-    """
-    Langkah 2: Mendapatkan daftar dokter untuk klinik yang dipilih.
-    """
-    # Cek apakah klinik ada
-    if not any(c["id"] == clinic_id for c in CLINICS_DATA):
-        raise HTTPException(status_code=404, detail="Klinik tidak ditemukan.")
-    
-    # Filter dokter berdasarkan clinic_id
-    available_doctors = [doc for doc in DOCTORS_DATA if doc["clinic_id"] == clinic_id]
-    return available_doctors
+@app.get("/admin/doctors/", response_model=List[Doctor])
+async def get_doctors():
+    return db["doctors"]
 
-@app.post("/queues/take", response_model=QueueTicket, tags=["Antrean"])
-async def take_queue_number(request: QueueRequest):
-    """
-    Langkah 3: Mengambil nomor antrean setelah memilih klinik dan dokter.
-    """
-    # Validasi input
-    clinic = next((c for c in CLINICS_DATA if c["id"] == request.clinic_id), None)
-    doctor = next((d for d in DOCTORS_DATA if d["id"] == request.doctor_id), None)
 
-    if not clinic:
-        raise HTTPException(status_code=404, detail="Klinik dengan ID tersebut tidak ditemukan.")
-    if not doctor:
-        raise HTTPException(status_code=404, detail="Dokter dengan ID tersebut tidak ditemukan.")
-    if doctor["clinic_id"] != clinic["id"]:
-        raise HTTPException(status_code=400, detail="Dokter yang dipilih tidak bertugas di klinik tersebut.")
+@app.post("/register", response_model=RegistrationResponse)
+async def register_patient(request: RegistrationRequest):
+    patient_name = request.patient_name.strip()
+    patient = next((p for p in db["patients"] if p["name"].lower() == patient_name.lower()), None)
 
-    # Buat nomor antrean baru
-    # 1. Ambil nomor urut terakhir dan tambahkan 1
-    QUEUE_COUNTERS[clinic["id"]] += 1
-    new_queue_seq = QUEUE_COUNTERS[clinic["id"]]
+    if not patient:
+        new_id = len(db["patients"]) + 1
+        patient = {"id": new_id, "name": patient_name}
+        db["patients"].append(patient)
 
-    # 2. Format nomor antrean dengan kode klinik (contoh: A001, B012)
-    queue_number_str = f"{clinic['code']}{new_queue_seq:03d}"
+    response_tickets = []
+    for service_id in request.service_ids:
+        service = next((s for s in db["services"] if s["id"] == service_id), None)
+        if not service:
+            raise HTTPException(status_code=404, detail=f"Layanan dengan ID {service_id} tidak ditemukan.")
 
-    # Buat "tiket" antrean
-    ticket = {
-        "queue_number": queue_number_str,
-        "patient_name": request.patient_name,
-        "clinic": clinic,
-        "doctor": doctor
-    }
+        doctor = None
+        if request.doctor_id:
+            doctor = next((d for d in db["doctors"] if d["id"] == request.doctor_id), None)
+            if not doctor or service_id not in doctor["services"]:
+                 raise HTTPException(status_code=400, detail="Dokter yang dipilih tidak sesuai dengan layanan.")
+        else:
+            # --- LOGIKA BARU: Penugasan Dokter Otomatis yang Lebih Baik ---
+            # 1. Cari semua dokter yang bisa menangani layanan ini
+            available_doctors = [d for d in db["doctors"] if service_id in d["services"]]
+            if not available_doctors:
+                raise HTTPException(status_code=404, detail=f"Tidak ada dokter yang tersedia untuk layanan {service['name']}.")
+            
+            # 2. Hitung jumlah antrean untuk setiap dokter yang tersedia
+            doctor_queue_counts = []
+            for d in available_doctors:
+                count = len([q for q in db["queues"] if q["service_id"] == service_id and q["doctor_id"] == d["id"]])
+                doctor_queue_counts.append({'doctor': d, 'count': count})
+            
+            # 3. Pilih dokter dengan jumlah antrean paling sedikit
+            least_busy_doctor_info = min(doctor_queue_counts, key=lambda x: x['count'])
+            doctor = least_busy_doctor_info['doctor']
 
-    # Simpan tiket ke daftar antrean (simulasi database)
-    PATIENT_QUEUES.append(ticket)
+        # --- Proses Pembuatan Antrean (Tidak ada perubahan) ---
+        current_queues_for_service = [q for q in db["queues"] if q["service_id"] == service_id and q["doctor_id"] == doctor["id"]]
+        queue_number = len(current_queues_for_service) + 1
 
-    return ticket
+        new_queue_id = len(db["queues"]) + 1
+        db["queues"].append({
+            "id": new_queue_id,
+            "patient_id": patient["id"],
+            "service_id": service_id,
+            "doctor_id": doctor["id"],
+            "queue_number": queue_number,
+        })
+
+        response_tickets.append({
+            "service": service,
+            "doctor": doctor,
+            "queue_number": f"{service['prefix']}{queue_number:03}",
+        })
+
+    return {"patient": patient, "tickets": response_tickets}
+
+# Middleware CORS (Tidak ada perubahan)
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+)

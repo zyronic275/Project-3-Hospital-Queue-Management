@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pendaftaran Pasien (Multi-Select)</title>
+    <title>Pendaftaran Pasien (Pilih Dokter)</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
         .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
@@ -35,57 +35,95 @@
                 </select>
                 <small>Tahan Ctrl (atau Cmd di Mac) untuk memilih lebih dari satu.</small>
             </div>
+            <div class="form-group" id="doctor_group" style="display:none;">
+                <label for="doctor_select">Pilih Dokter:</label>
+                <select id="doctor_select">
+                    <option value="">-- Pilih Dokter --</option>
+                </select>
+            </div>
             <button type="submit">Dapatkan Nomor Antrean</button>
         </form>
         <div id="result" style="display:none;"></div>
     </div>
 
     <script>
-        const selectElement = document.getElementById('service_select');
+        const serviceSelect = document.getElementById('service_select');
+        const doctorGroup = document.getElementById('doctor_group');
+        const doctorSelect = document.getElementById('doctor_select');
         const form = document.getElementById('registrationForm');
         const resultDiv = document.getElementById('result');
+        
+        let allDoctors = []; // Variabel untuk menyimpan semua data dokter
 
-        // FUNGSI BARU: Saat halaman dimuat, ambil daftar layanan dari API
+        // FUNGSI 1: Ambil data layanan dan dokter saat halaman dimuat
         window.addEventListener('load', async () => {
             try {
-                const response = await fetch('http://127.0.0.1:8000/admin/services/');
-                if (!response.ok) throw new Error('Gagal mengambil data layanan.');
+                // Ambil daftar layanan
+                const servicesResponse = await fetch('http://127.0.0.1:8000/admin/services/');
+                if (!servicesResponse.ok) throw new Error('Gagal mengambil data layanan.');
+                const services = await servicesResponse.json();
                 
-                const services = await response.json();
-                selectElement.innerHTML = ''; // Kosongkan opsi "Memuat..."
+                serviceSelect.innerHTML = '';
+                services.forEach(service => {
+                    const option = document.createElement('option');
+                    option.value = service.id;
+                    option.textContent = service.name;
+                    serviceSelect.appendChild(option);
+                });
 
-                if (services.length === 0) {
-                    selectElement.innerHTML = '<option disabled>Tidak ada layanan tersedia.</option>';
-                } else {
-                    services.forEach(service => {
-                        const option = document.createElement('option');
-                        option.value = service.id;
-                        option.textContent = service.name;
-                        selectElement.appendChild(option);
-                    });
-                }
+                // Ambil daftar dokter
+                const doctorsResponse = await fetch('http://127.0.0.1:8000/admin/doctors/');
+                if (!doctorsResponse.ok) throw new Error('Gagal mengambil data dokter.');
+                allDoctors = await doctorsResponse.json();
+
             } catch (error) {
-                console.error('Failed to fetch services:', error);
-                selectElement.innerHTML = `<option disabled>Error: ${error.message}</option>`;
+                console.error('Gagal mengambil data awal:', error);
+                serviceSelect.innerHTML = `<option disabled>Error: ${error.message}</option>`;
             }
         });
 
-        // FUNGSI YANG DIMODIFIKASI: Saat form disubmit
+        // FUNGSI 2: Tampilkan pilihan dokter jika HANYA SATU layanan dipilih
+        serviceSelect.addEventListener('change', () => {
+            const selectedServices = Array.from(serviceSelect.selectedOptions);
+
+            // Jika hanya 1 layanan dipilih, tampilkan dokter yang sesuai
+            if (selectedServices.length === 1) {
+                const serviceId = parseInt(selectedServices[0].value);
+                const availableDoctors = allDoctors.filter(doctor => doctor.services.includes(serviceId));
+                
+                doctorSelect.innerHTML = '<option value="">-- Pilih Dokter --</option>'; // Opsi default
+                availableDoctors.forEach(doctor => {
+                    const option = document.createElement('option');
+                    option.value = doctor.id;
+                    option.textContent = doctor.name;
+                    doctorSelect.appendChild(option);
+                });
+                doctorGroup.style.display = 'block'; // Tampilkan pilihan dokter
+            } else {
+                // Jika 0 atau lebih dari 1 layanan dipilih, sembunyikan pilihan dokter
+                doctorGroup.style.display = 'none';
+                doctorSelect.value = ''; // Reset pilihan dokter
+            }
+        });
+
+        // FUNGSI 3: Kirim data pendaftaran saat form disubmit
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
             resultDiv.style.display = 'block';
             resultDiv.innerHTML = "Memproses...";
-            resultDiv.style.color = '#555';
-
+            
             const patientName = document.getElementById('patient_name').value;
-
-            // Mengambil semua ID dari opsi yang dipilih di kotak multi-select
-            const selectedOptions = Array.from(selectElement.selectedOptions);
-            const serviceIds = selectedOptions.map(option => parseInt(option.value));
+            const selectedServiceOptions = Array.from(serviceSelect.selectedOptions);
+            const serviceIds = selectedServiceOptions.map(option => parseInt(option.value));
+            const selectedDoctorId = doctorSelect.value ? parseInt(doctorSelect.value) : null;
 
             if (serviceIds.length === 0) {
-                resultDiv.style.color = 'red';
                 resultDiv.innerText = 'Error: Mohon pilih setidaknya satu layanan.';
+                return;
+            }
+            // Validasi: jika 1 layanan dipilih, dokter juga harus dipilih
+            if (serviceIds.length === 1 && !selectedDoctorId) {
+                resultDiv.innerText = 'Error: Mohon pilih dokter untuk layanan yang dipilih.';
                 return;
             }
 
@@ -96,6 +134,7 @@
                     body: JSON.stringify({
                         patient_name: patientName,
                         service_ids: serviceIds,
+                        doctor_id: selectedDoctorId, // Kirim ID dokter yang dipilih
                     }),
                 });
 
@@ -106,7 +145,6 @@
 
                 const data = await response.json();
                 
-                resultDiv.style.color = '#333';
                 let ticketsHtml = data.tickets.map(ticket => 
                     `<li>
                         <strong>Layanan:</strong> ${ticket.service.name} <br>
