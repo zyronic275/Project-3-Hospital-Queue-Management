@@ -53,12 +53,10 @@
         const form = document.getElementById('registrationForm');
         const resultDiv = document.getElementById('result');
         
-        let allDoctors = []; // Variabel untuk menyimpan semua data dokter
+        let allDoctors = [];
 
-        // FUNGSI 1: Ambil data layanan dan dokter saat halaman dimuat
         window.addEventListener('load', async () => {
             try {
-                // Ambil daftar layanan
                 const servicesResponse = await fetch('http://127.0.0.1:8000/admin/services/');
                 if (!servicesResponse.ok) throw new Error('Gagal mengambil data layanan.');
                 const services = await servicesResponse.json();
@@ -71,7 +69,6 @@
                     serviceSelect.appendChild(option);
                 });
 
-                // Ambil daftar dokter
                 const doctorsResponse = await fetch('http://127.0.0.1:8000/admin/doctors/');
                 if (!doctorsResponse.ok) throw new Error('Gagal mengambil data dokter.');
                 allDoctors = await doctorsResponse.json();
@@ -82,31 +79,28 @@
             }
         });
 
-        // FUNGSI 2: Tampilkan pilihan dokter jika HANYA SATU layanan dipilih
         serviceSelect.addEventListener('change', () => {
             const selectedServices = Array.from(serviceSelect.selectedOptions);
 
-            // Jika hanya 1 layanan dipilih, tampilkan dokter yang sesuai
             if (selectedServices.length === 1) {
                 const serviceId = parseInt(selectedServices[0].value);
                 const availableDoctors = allDoctors.filter(doctor => doctor.services.includes(serviceId));
                 
-                doctorSelect.innerHTML = '<option value="">-- Pilih Dokter --</option>'; // Opsi default
+                doctorSelect.innerHTML = '<option value="">-- Pilih Dokter --</option>';
                 availableDoctors.forEach(doctor => {
                     const option = document.createElement('option');
                     option.value = doctor.id;
-                    option.textContent = doctor.name;
+                    // --- PERUBAHAN 1: Menampilkan nama dan kode dokter di pilihan ---
+                    option.textContent = `${doctor.name} (${doctor.doctor_code})`;
                     doctorSelect.appendChild(option);
                 });
-                doctorGroup.style.display = 'block'; // Tampilkan pilihan dokter
+                doctorGroup.style.display = 'block';
             } else {
-                // Jika 0 atau lebih dari 1 layanan dipilih, sembunyikan pilihan dokter
                 doctorGroup.style.display = 'none';
-                doctorSelect.value = ''; // Reset pilihan dokter
+                doctorSelect.value = '';
             }
         });
 
-        // FUNGSI 3: Kirim data pendaftaran saat form disubmit
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
             resultDiv.style.display = 'block';
@@ -121,7 +115,6 @@
                 resultDiv.innerText = 'Error: Mohon pilih setidaknya satu layanan.';
                 return;
             }
-            // Validasi: jika 1 layanan dipilih, dokter juga harus dipilih
             if (serviceIds.length === 1 && !selectedDoctorId) {
                 resultDiv.innerText = 'Error: Mohon pilih dokter untuk layanan yang dipilih.';
                 return;
@@ -134,7 +127,7 @@
                     body: JSON.stringify({
                         patient_name: patientName,
                         service_ids: serviceIds,
-                        doctor_id: selectedDoctorId, // Kirim ID dokter yang dipilih
+                        doctor_id: selectedDoctorId,
                     }),
                 });
 
@@ -145,11 +138,12 @@
 
                 const data = await response.json();
                 
+                // --- PERUBAHAN 2: Menampilkan nama dan kode dokter di hasil tiket ---
                 let ticketsHtml = data.tickets.map(ticket => 
                     `<li>
                         <strong>Layanan:</strong> ${ticket.service.name} <br>
                         <strong>No. Antrean:</strong> ${ticket.queue_number} <br>
-                        <strong>Dokter:</strong> ${ticket.doctor.name}
+                        <strong>Dokter:</strong> ${ticket.doctor.name} (${ticket.doctor.doctor_code})
                     </li>`
                 ).join('');
 

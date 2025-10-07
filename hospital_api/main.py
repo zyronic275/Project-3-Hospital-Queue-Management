@@ -3,9 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
-# --- Basis Data In-Memory ---
-# Jumlah dokter sekarang ditambahkan menjadi dua per poli.
-
+# --- Basis Data In-Memory (Tidak ada perubahan) ---
 db: Dict[str, List[Dict[str, Any]]] = {
     "services": [
         {"id": 1, "name": "Poli Umum", "prefix": "A"},
@@ -14,21 +12,14 @@ db: Dict[str, List[Dict[str, Any]]] = {
         {"id": 4, "name": "Laboratorium", "prefix": "D"},
     ],
     "doctors": [
-        # Dua dokter untuk Poli Umum (ID Layanan: 1)
-        {"id": 1, "name": "Dr. Budi Santoso", "services": [1]},
-        {"id": 5, "name": "Dr. Elara Vance", "services": [1]},
-
-        # Dua dokter untuk Poli Gigi (ID Layanan: 2)
-        {"id": 2, "name": "Drg. Aura Salsabila", "services": [2]},
-        {"id": 6, "name": "Drg. Finnian Gale", "services": [2]},
-        
-        # Dua dokter untuk Poli Anak (ID Layanan: 3)
-        {"id": 3, "name": "Dr. Candra Wijaya", "services": [3]},
-        {"id": 7, "name": "Dr. Lyra Solstice", "services": [3]},
-
-        # Dua dokter untuk Laboratorium (ID Layanan: 4)
-        {"id": 4, "name": "Dr. Dita Amelia", "services": [4]},
-        {"id": 8, "name": "Dr. Ronan Petrova", "services": [4]},
+        {"id": 1, "doctor_code": "1", "name": "Dr. Budi Santoso", "services": [1]},
+        {"id": 5, "doctor_code": "2", "name": "Dr. Elara Vance", "services": [1]},
+        {"id": 2, "doctor_code": "1", "name": "Dr. Anisa Lestari", "services": [2]},
+        {"id": 6, "doctor_code": "2", "name": "Dr. Finnian Gale", "services": [2]},
+        {"id": 3, "doctor_code": "1", "name": "Dr. Candra Wijaya", "services": [3]},
+        {"id": 7, "doctor_code": "2", "name": "Dr. Lyra Solstice", "services": [3]},
+        {"id": 4, "doctor_code": "1", "name": "Dr. Dita Amelia", "services": [4]},
+        {"id": 8, "doctor_code": "2", "name": "Dr. Ronan Petrova", "services": [4]},
     ],
     "patients": [],
     "queues": []
@@ -41,6 +32,7 @@ class Service(BaseModel):
 
 class Doctor(BaseModel):
     id: int
+    doctor_code: str
     name: str
     services: List[int]
 
@@ -76,6 +68,7 @@ async def get_doctors():
 
 @app.post("/register", response_model=RegistrationResponse)
 async def register_patient(request: RegistrationRequest):
+    # Bagian ini tidak ada perubahan
     patient_name = request.patient_name.strip()
     patient = next((p for p in db["patients"] if p["name"].lower() == patient_name.lower()), None)
 
@@ -96,25 +89,20 @@ async def register_patient(request: RegistrationRequest):
             if not doctor or service_id not in doctor["services"]:
                  raise HTTPException(status_code=400, detail="Dokter yang dipilih tidak sesuai dengan layanan.")
         else:
-            # --- LOGIKA BARU: Penugasan Dokter Otomatis yang Lebih Baik ---
-            # 1. Cari semua dokter yang bisa menangani layanan ini
             available_doctors = [d for d in db["doctors"] if service_id in d["services"]]
             if not available_doctors:
                 raise HTTPException(status_code=404, detail=f"Tidak ada dokter yang tersedia untuk layanan {service['name']}.")
             
-            # 2. Hitung jumlah antrean untuk setiap dokter yang tersedia
             doctor_queue_counts = []
             for d in available_doctors:
                 count = len([q for q in db["queues"] if q["service_id"] == service_id and q["doctor_id"] == d["id"]])
                 doctor_queue_counts.append({'doctor': d, 'count': count})
             
-            # 3. Pilih dokter dengan jumlah antrean paling sedikit
             least_busy_doctor_info = min(doctor_queue_counts, key=lambda x: x['count'])
             doctor = least_busy_doctor_info['doctor']
 
-        # --- Proses Pembuatan Antrean (Tidak ada perubahan) ---
         current_queues_for_service = [q for q in db["queues"] if q["service_id"] == service_id and q["doctor_id"] == doctor["id"]]
-        queue_number = len(current_queues_for_service) + 1
+        queue_number_int = len(current_queues_for_service) + 1
 
         new_queue_id = len(db["queues"]) + 1
         db["queues"].append({
@@ -122,13 +110,17 @@ async def register_patient(request: RegistrationRequest):
             "patient_id": patient["id"],
             "service_id": service_id,
             "doctor_id": doctor["id"],
-            "queue_number": queue_number,
+            "queue_number": queue_number_int, # Simpan sebagai angka saja
         })
+
+        # --- INI SATU-SATUNYA BARIS YANG BERUBAH ---
+        # Format nomor antrean baru: [Prefix]-[DoctorCode]-[NomorUrut]
+        formatted_queue_number = f"{service['prefix']}-{doctor['doctor_code']}-{queue_number_int:03}"
 
         response_tickets.append({
             "service": service,
             "doctor": doctor,
-            "queue_number": f"{service['prefix']}{queue_number:03}",
+            "queue_number": formatted_queue_number, # Kirim nomor yang sudah diformat
         })
 
     return {"patient": patient, "tickets": response_tickets}
