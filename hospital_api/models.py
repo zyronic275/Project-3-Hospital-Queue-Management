@@ -1,7 +1,4 @@
 # hospital_api/models.py
-
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum
-from sqlalchemy.orm import relationship
 from .database import Base
 import datetime
 import enum
