@@ -1,5 +1,4 @@
 # hospital_api/crud.py
-
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from . import models, schemas
