@@ -31,9 +31,9 @@ class Doctor(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     # Jadwal & kuota kembali ke sini
-    start_time = Column(Time, default=datetime.time(9, 0))
-    end_time = Column(Time, default=datetime.time(17, 0)) # Diperpanjang hingga jam 5 sore
-    max_patients = Column(Integer, default=10)
+    start_time = Column(Time)
+    end_time = Column(Time) # Diperpanjang hingga jam 5 sore
+    max_patients = Column(Integer)
     
     services = relationship("Service", secondary=doctor_service_association, back_populates="doctors")
     queues = relationship("Queue", back_populates="doctor")
@@ -48,10 +48,10 @@ class Queue(Base):
     id = Column(Integer, primary_key=True, index=True)
     queue_id_display = Column(String)
     queue_number = Column(Integer)
-    registration_time = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
+    registration_time = Column(DateTime)
     
     # ▼▼▼ TAMBAHKAN DUA KOLOM INI ▼▼▼
-    status = Column(Enum(QueueStatus), default=QueueStatus.MENUNGGU)
+    status = Column(Enum(QueueStatus))
     visit_notes = Column(Text, nullable=True) # Catatan bisa kosong
     
     patient_id = Column(Integer, ForeignKey("patients.id"))
@@ -61,10 +61,3 @@ class Queue(Base):
     patient = relationship("Patient", back_populates="queues")
     service = relationship("Service", back_populates="queues")
     doctor = relationship("Doctor", back_populates="queues")
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    is_admin = Column(Boolean, default=False)

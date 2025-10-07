@@ -1,210 +1,81 @@
-# hospital_api/crud.py
-
-from sqlalchemy.orm import Session
-from sqlalchemy import func, case, and_
+# hospital_api/crud.py (Final In-Memory Version)
+from . import schemas
+from .in_memory_db import DB, get_next_id
 import datetime
-from datetime import date
-from . import models, schemas
 
-# ==================================
-# === CRUD Functions for Patient ===
-# ==================================
+# --- Service CRUD ---
+def create_service(service: schemas.ServiceCreate):
+    service_id = get_next_id("service_id")
+    new_service = {"id": service_id, "name": service.name, "prefix": service.prefix, "doctors": []}
+    DB["services"][service_id] = new_service
+    return new_service
 
-def get_patient(db: Session, patient_id: int):
-    return db.query(models.Patient).filter(models.Patient.id == patient_id).first()
+def get_service(service_id: int):
+    return DB["services"].get(service_id)
 
-def get_patient_by_name(db: Session, name: str):
-    return db.query(models.Patient).filter(models.Patient.name == name).first()
+def get_services():
+    return list(DB["services"].values())
 
-def get_patients(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Patient).offset(skip).limit(limit).all()
+# --- Doctor CRUD ---
+def create_doctor(doctor: schemas.DoctorBase):
+    doctor_id = get_next_id("doctor_id")
+    new_doctor = {
+        "id": doctor_id, "name": doctor.name,
+        "start_time": doctor.start_time or datetime.time(9, 0),
+        "end_time": doctor.end_time or datetime.time(17, 0),
+        "max_patients": doctor.max_patients or 10, "services": []
+    }
+    DB["doctors"][doctor_id] = new_doctor
+    return new_doctor
 
-def create_patient(db: Session, patient: schemas.PatientBase):
-    db_patient = models.Patient(name=patient.name)
-    db.add(db_patient)
-    db.commit()
-    db.refresh(db_patient)
-    return db_patient
+def get_doctor(doctor_id: int):
+    return DB["doctors"].get(doctor_id)
+    
+def get_doctors():
+    return list(DB["doctors"].values())
 
-# ==================================
-# === CRUD Functions for Service ===
-# ==================================
-
-def get_service(db: Session, service_id: int):
-    return db.query(models.Service).filter(models.Service.id == service_id).first()
-
-def get_services(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Service).offset(skip).limit(limit).all()
-
-def create_service(db: Session, service: schemas.ServiceCreate):
-    # Perbarui baris ini untuk menyertakan 'prefix'
-    db_service = models.Service(name=service.name, prefix=service.prefix)
-    db.add(db_service)
-    db.commit()
-    db.refresh(db_service)
-    return db_service
-
-# ▼▼▼ TAMBAHKAN FUNGSI BARU INI ▼▼▼
-def update_service(db: Session, service_id: int, service: schemas.ServiceCreate):
-    # Cari data layanan yang ada di database berdasarkan ID
-    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
-    if db_service:
-        # Update namanya dengan data baru
-        db_service.name = service.name
-        db.commit()
-        db.refresh(db_service)
-        return db_service
-    return None # Kembalikan None jika data tidak ditemukan
-
-def delete_service(db: Session, service_id: int):
-    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
-    if db_service:
-        db.delete(db_service)
-        db.commit()
-        return db_service
+def assign_service_to_doctor(doctor_id: int, service_id: int):
+    doctor = DB["doctors"].get(doctor_id)
+    service = DB["services"].get(service_id)
+    if doctor and service:
+        if not any(s['id'] == service_id for s in doctor['services']):
+            doctor['services'].append(service)
+        if not any(d['id'] == doctor_id for d in service['doctors']):
+            service['doctors'].append(doctor)
+        return doctor
     return None
 
-# ==================================
-# === CRUD Functions for Doctor ===
-# ==================================
-
-def get_doctor(db: Session, doctor_id: int):
-    return db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
-
-def get_doctors(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Doctor).offset(skip).limit(limit).all()
-
-def create_doctor(db: Session, doctor: schemas.DoctorBase):
-    db_doctor = models.Doctor(**doctor.model_dump())
-    db.add(db_doctor)
-    db.commit()
-    db.refresh(db_doctor)
-    return db_doctor
-
-def assign_service_to_doctor(db: Session, doctor_id: int, service_id: int):
-    """Menghubungkan seorang dokter dengan layanan yang bisa ia tangani."""
-    db_doctor = get_doctor(db, doctor_id)
-    db_service = get_service(db, service_id)
-    if db_doctor and db_service:
-        db_doctor.services.append(db_service)
-        db.commit()
-        db.refresh(db_doctor)
-        return db_doctor
-    return None
-
-def delete_doctor(db: Session, doctor_id: int):
-    db_doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
-    if db_doctor:
-        db.delete(db_doctor)
-        db.commit()
-        return db_doctor
-    return None
-
-def update_doctor(db: Session, doctor_id: int, doctor: schemas.DoctorBase):
-    db_doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
-
+def update_doctor(doctor_id: int, doctor: schemas.DoctorBase):
+    db_doctor = DB["doctors"].get(doctor_id)
     if not db_doctor:
-        return None # Kembalikan None jika dokter tidak ditemukan
-
-    # Ambil data dari Pydantic schema
+        return None
     update_data = doctor.model_dump(exclude_unset=True)
-
-    # Lakukan update untuk setiap field yang diberikan
     for key, value in update_data.items():
-        setattr(db_doctor, key, value)
-
-    db.add(db_doctor)
-    db.commit()
-    db.refresh(db_doctor)
-
+        db_doctor[key] = value
     return db_doctor
-
-# ==================================
-# === "Read" Functions for Queue ===
-# ==================================
-
-def get_todays_queues_by_service(db: Session, service_id: int):
-    """Mendapatkan daftar antrean hari ini untuk sebuah layanan spesifik."""
-    today = date.today()
-    return db.query(models.Queue).filter(
-        models.Queue.service_id == service_id,
-        func.date(models.Queue.registration_time) == today
-    ).order_by(models.Queue.queue_number).all()
-
-def get_patient_history(db: Session, patient_id: int):
-    """Mendapatkan seluruh riwayat kunjungan seorang pasien."""
-    return db.query(models.Queue).filter(models.Queue.patient_id == patient_id).all()
-
-def update_queue(db: Session, queue_id: int, update_data: schemas.QueueUpdate):
-    db_queue = db.query(models.Queue).filter(models.Queue.id == queue_id).first()
-    if db_queue:
-        db_queue.status = update_data.status
-        if update_data.visit_notes is not None:
-            db_queue.visit_notes = update_data.visit_notes
-        db.commit()
-        db.refresh(db_queue)
-        return db_queue
-    return None
-
-def get_queue_density_today(db: Session):
-    """Memantau kepadatan antrean hari ini per layanan."""
-    today = datetime.date.today()
-    result = db.query(
-        models.Service.name,
-        func.count(models.Queue.id).label("total_patients"),
-        func.sum(case((models.Queue.status == 'Menunggu', 1), else_=0)).label("waiting"),
-        func.sum(case((models.Queue.status == 'Selesai', 1), else_=0)).label("finished")
-    ).join(models.Queue, models.Service.id == models.Queue.service_id).filter(
-        func.date(models.Queue.registration_time) == today
-    ).group_by(models.Service.name).all()
-    return result
-
-def update_queue(db: Session, queue_id: int, update_data: schemas.QueueUpdate):
-    db_queue = db.query(models.Queue).filter(models.Queue.id == queue_id).first()
-    if db_queue:
-        db_queue.status = update_data.status
-        if update_data.visit_notes is not None:
-            db_queue.visit_notes = update_data.visit_notes
-        db.commit()
-        db.refresh(db_queue)
-        return db_queue
-    return None
-
-def get_queue_density_today(db: Session):
-    """Memantau kepadatan antrean hari ini per layanan dengan detail status."""
-    today = datetime.date.today()
     
-    # Query untuk mendapatkan data mentah dari database
-    raw_density_data = db.query(
-        models.Service.name,
-        func.count(models.Queue.id).label("total_patients"),
-        func.sum(case((models.Queue.status == 'Menunggu', 1), else_=0)).label("waiting"),
-        func.sum(case((models.Queue.status == 'Sedang Dilayani', 1), else_=0)).label("in_service"),
-        func.sum(case((models.Queue.status == 'Selesai', 1), else_=0)).label("finished")
-    ).outerjoin(models.Queue, and_(
-        models.Service.id == models.Queue.service_id,
-        func.date(models.Queue.registration_time) == today
-    )).group_by(models.Service.name).order_by(models.Service.name).all()
-    # (perlu import 'and_' dari sqlalchemy)
+# --- Patient & Queue Functions ---
+def get_or_create_patient(patient_name: str):
+    for patient in DB["patients"].values():
+        if patient['name'] == patient_name:
+            return patient
+    patient_id = get_next_id("patient_id")
+    new_patient = {"id": patient_id, "name": patient_name}
+    DB["patients"][patient_id] = new_patient
+    return new_patient
 
-    # Proses data mentah menjadi format schema yang kita inginkan
-    density_list = []
-    hospital_total = 0
-    for row in raw_density_data:
-        hospital_total += row.total_patients
-        service_data = schemas.ServiceDensity(
-            service_name=row[0],
-            total_patients_today=row.total_patients,
-            waiting=row.waiting,
-            in_service=row.in_service,
-            finished=row.finished
-        )
-        density_list.append(service_data)
+def create_queue(patient: dict, service: dict, doctor: dict):
+    queue_id = get_next_id("queue_id")
+    today = datetime.date.today()
+    queue_number = 1 + len([q for q in DB["queues"] if q["doctor"]["id"] == doctor["id"] and q["service"]["id"] == service["id"] and q["registration_time"].date() == today])
+    display_id = f"{service['prefix']}{queue_number}"
+    new_queue = {
+        "id": queue_id, "queue_id_display": display_id, "queue_number": queue_number,
+        "registration_time": datetime.datetime.now(), "status": "Menunggu", "visit_notes": None,
+        "patient": patient, "service": service, "doctor": doctor
+    }
+    DB["queues"].append(new_queue)
+    return new_queue
 
-    report = schemas.DensityReport(
-        report_date=today,
-        hospital_total_patients_today=hospital_total,
-        density_per_service=density_list
-    )
-    
-    return report
+def get_queues_for_doctor_today(doctor_id: int, today: datetime.date):
+    return [q for q in DB["queues"] if q["doctor"]["id"] == doctor_id and q["registration_time"].date() == today]
