@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
-# --- Basis Data In-Memory (Tidak ada perubahan) ---
+# --- Basis Data In-Memory ---
 db: Dict[str, List[Dict[str, Any]]] = {
     "services": [
         {"id": 1, "name": "Poli Umum", "prefix": "A"},
@@ -12,14 +12,14 @@ db: Dict[str, List[Dict[str, Any]]] = {
         {"id": 4, "name": "Laboratorium", "prefix": "D"},
     ],
     "doctors": [
-        {"id": 1, "doctor_code": "1", "name": "dr. Budi Santoso", "services": [1]},
-        {"id": 5, "doctor_code": "2", "name": "dr. Elara Vance", "services": [1]},
-        {"id": 2, "doctor_code": "1", "name": "drg. Anisa Lestari", "services": [2]},
-        {"id": 6, "doctor_code": "2", "name": "drg. Finnian Gale", "services": [2]},
-        {"id": 3, "doctor_code": "1", "name": "dr. Candra Wijaya", "services": [3]},
-        {"id": 7, "doctor_code": "2", "name": "dr. Lyra Solstice", "services": [3]},
-        {"id": 4, "doctor_code": "1", "name": "dr. Dita Amelia", "services": [4]},
-        {"id": 8, "doctor_code": "2", "name": "dr. Ronan Petrova", "services": [4]},
+        {"id": 1, "doctor_code": "1", "name": "dr. Elan", "services": [1]},
+        {"id": 5, "doctor_code": "2", "name": "dr. Budi", "services": [1]},
+        {"id": 2, "doctor_code": "1", "name": "drg. Aura", "services": [2]},
+        {"id": 6, "doctor_code": "2", "name": "drg. Tiffany", "services": [2]},
+        {"id": 3, "doctor_code": "1", "name": "dr. Candra", "services": [3]},
+        {"id": 7, "doctor_code": "2", "name": "dr. Putri", "services": [3]},
+        {"id": 4, "doctor_code": "1", "name": "dr. Dita", "services": [4]},
+        {"id": 8, "doctor_code": "2", "name": "dr. Eka", "services": [4]},
     ],
     "patients": [],
     "queues": []
@@ -66,9 +66,7 @@ async def get_doctors():
     return db["doctors"]
 
 
-@app.post("/register", response_model=RegistrationResponse)
-async def register_patient(request: RegistrationRequest):
-    # Bagian ini tidak ada perubahan
+@app.post("/register", response_model=RegistrationResponse)async def register_patient(request: RegistrationRequest):
     patient_name = request.patient_name.strip()
     patient = next((p for p in db["patients"] if p["name"].lower() == patient_name.lower()), None)
 
@@ -113,7 +111,6 @@ async def register_patient(request: RegistrationRequest):
             "queue_number": queue_number_int, # Simpan sebagai angka saja
         })
 
-        # --- INI SATU-SATUNYA BARIS YANG BERUBAH ---
         # Format nomor antrean baru: [Prefix]-[DoctorCode]-[NomorUrut]
         formatted_queue_number = f"{service['prefix']}-{doctor['doctor_code']}-{queue_number_int:03}"
 
