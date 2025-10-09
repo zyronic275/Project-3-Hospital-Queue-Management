@@ -22,10 +22,13 @@ next_queue_id = 1
 def get_clinics() -> list[schemas.Clinic]:
     return list(CLINICS.values())
 
+<<<<<<< HEAD
+=======
 
 def get_clinic(clinic_id: int) -> Optional[schemas.Clinic]:
     return CLINICS.get(clinic_id)
 
+>>>>>>> main
 def get_clinic_by_name(name: str) -> Optional[schemas.Clinic]:
     for clinic in CLINICS.values():
         if clinic.name == name:
@@ -39,6 +42,8 @@ def create_clinic(clinic_create: schemas.ClinicCreate) -> schemas.Clinic:
     next_clinic_id += 1
     return new_clinic
 
+<<<<<<< HEAD
+=======
 def update_clinic(clinic_id: int, clinic_update: schemas.ClinicUpdate) -> Optional[schemas.Clinic]:
     if clinic_id in CLINICS:
         updated_clinic = schemas.Clinic(id=clinic_id, name=clinic_update.name)
@@ -46,6 +51,7 @@ def update_clinic(clinic_id: int, clinic_update: schemas.ClinicUpdate) -> Option
         return updated_clinic
     return None
 
+>>>>>>> main
 def delete_clinic(clinic_id: int) -> Optional[schemas.Clinic]:
     if clinic_id in CLINICS:
         return CLINICS.pop(clinic_id)
@@ -53,9 +59,12 @@ def delete_clinic(clinic_id: int) -> Optional[schemas.Clinic]:
 
 # === Doctor Functions ===
 
+<<<<<<< HEAD
+=======
 def get_doctors() -> list[schemas.Doctor]:
     return list(DOCTORS.values())
 
+>>>>>>> main
 def get_doctor_by_clinic(clinic_id: int) -> Optional[schemas.Doctor]:
     for doctor in DOCTORS.values():
         if doctor.clinic_id == clinic_id:
@@ -78,6 +87,8 @@ def create_doctor(doctor_create: schemas.DoctorCreate) -> Optional[schemas.Docto
     next_doctor_id += 1
     return new_doctor
     
+<<<<<<< HEAD
+=======
 def get_doctor(doctor_id: int) -> Optional[schemas.Doctor]:
     return DOCTORS.get(doctor_id)
 
@@ -103,6 +114,7 @@ def update_doctor(doctor_id: int, doctor_update: schemas.DoctorUpdate) -> Option
     DOCTORS[doctor_id] = updated_doctor
     return updated_doctor
 
+>>>>>>> main
 def delete_doctor(doctor_id: int) -> Optional[schemas.Doctor]:
     if doctor_id in DOCTORS:
         return DOCTORS.pop(doctor_id)

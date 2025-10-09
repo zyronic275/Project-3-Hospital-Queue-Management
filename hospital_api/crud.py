@@ -3,97 +3,101 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from . import models, schemas
 from datetime import date
+import datetime
+from typing import List, Dict, Any
 
-# === Clinic CRUD Functions ===
+# ==========================================================
+# PENGGANTI DATABASE: Semua data disimpan di sini
+# ==========================================================
+CLINICS_DATA: List[Dict[str, Any]] = [
+    {"id": 1, "name": "Klinik Umum"},
+    {"id": 2, "name": "Klinik Gigi"},
+]
+DOCTORS_DATA: List[Dict[str, Any]] = [
+    {"id": 101, "name": "Dr. Budi", "clinic_id": 1},
+    {"id": 102, "name": "Dr. Ani", "clinic_id": 1},
+    {"id": 201, "name": "Dr. Citra", "clinic_id": 2},
+]
+QUEUES_DATA: List[Dict[str, Any]] = []
 
-def get_clinic(db: Session, clinic_id: int):
-    return db.query(models.Clinic).filter(models.Clinic.id == clinic_id).first()
+# Counter untuk ID, agar setiap data baru punya ID unik
+next_clinic_id = 3
+next_doctor_id = 202
+next_queue_id = 1
 
-def get_clinic_by_name(db: Session, name: str):
-    return db.query(models.Clinic).filter(models.Clinic.name == name).first()
+# ==========================================================
+# Fungsi CRUD untuk Klinik (Tanpa Database)
+# ==========================================================
 
-def get_clinics(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Clinic).offset(skip).limit(limit).all()
+def get_clinic(clinic_id: int):
+    """Mencari klinik berdasarkan ID dari list."""
+    return next((clinic for clinic in CLINICS_DATA if clinic["id"] == clinic_id), None)
 
-def create_clinic(db: Session, clinic: schemas.ClinicCreate):
-    db_clinic = models.Clinic(name=clinic.name)
-    db.add(db_clinic)
-    db.commit()
-    db.refresh(db_clinic)
-    return db_clinic
+def get_clinic_by_name(name: str):
+    """Mencari klinik berdasarkan nama dari list."""
+    return next((clinic for clinic in CLINICS_DATA if clinic["name"] == name), None)
 
-def delete_clinic(db: Session, clinic_id: int):
-    db_clinic = db.query(models.Clinic).filter(models.Clinic.id == clinic_id).first()
-    if db_clinic:
-        db.delete(db_clinic)
-        db.commit()
-        return db_clinic
+def get_clinics(skip: int = 0, limit: int = 100):
+    """Mengambil semua data klinik dengan paginasi sederhana."""
+    return CLINICS_DATA[skip : skip + limit]
+
+def create_clinic(clinic_name: str):
+    """Menambahkan klinik baru ke dalam list."""
+    global next_clinic_id
+    new_clinic = {"id": next_clinic_id, "name": clinic_name}
+    CLINICS_DATA.append(new_clinic)
+    next_clinic_id += 1
+    return new_clinic
+
+def delete_clinic(clinic_id: int):
+    """Menghapus klinik dari list berdasarkan ID."""
+    clinic_to_delete = get_clinic(clinic_id)
+    if clinic_to_delete:
+        CLINICS_DATA.remove(clinic_to_delete)
+        return clinic_to_delete
     return None
 
-# === Doctor CRUD Functions ===
+# ==========================================================
+# Fungsi CRUD untuk Dokter (Tanpa Database)
+# ==========================================================
 
-def get_doctor(db: Session, doctor_id: int):
-    return db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+def get_doctor(doctor_id: int):
+    """Mencari dokter berdasarkan ID dari list."""
+    return next((doc for doc in DOCTORS_DATA if doc["id"] == doctor_id), None)
 
-def get_doctors(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Doctor).offset(skip).limit(limit).all()
+def get_doctors(skip: int = 0, limit: int = 100):
+    """Mengambil semua data dokter."""
+    return DOCTORS_DATA[skip : skip + limit]
 
-def create_doctor(db: Session, doctor: schemas.DoctorCreate):
-    db_doctor = models.Doctor(**doctor.model_dump())
-    db.add(db_doctor)
-    db.commit()
-    db.refresh(db_doctor)
-    return db_doctor
+def create_doctor(name: str, clinic_id: int):
+    """Menambahkan dokter baru ke dalam list."""
+    global next_doctor_id
+    new_doctor = {"id": next_doctor_id, "name": name, "clinic_id": clinic_id}
+    DOCTORS_DATA.append(new_doctor)
+    next_doctor_id += 1
+    return new_doctor
     
-def delete_doctor(db: Session, doctor_id: int):
-    db_doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
-    if db_doctor:
-        db.delete(db_doctor)
-        db.commit()
-        return db_doctor
+def delete_doctor(doctor_id: int):
+    """Menghapus dokter dari list."""
+    doctor_to_delete = get_doctor(doctor_id)
+    if doctor_to_delete:
+        DOCTORS_DATA.remove(doctor_to_delete)
+        return doctor_to_delete
     return None
 
-# === Queue CRUD Functions ===
+# ==========================================================
+# Fungsi CRUD untuk Antrean (Tanpa Database)
+# ==========================================================
 
-def get_next_queue_number(db: Session, clinic_id: int):
-    today = date.today()
-    # Find the maximum queue number for today in the specific clinic
-    max_queue = db.query(func.max(models.Queue.queue_number)).filter(
-        models.Queue.clinic_id == clinic_id,
-        func.date(models.Queue.registration_time) == today
-    ).scalar()
+def get_next_queue_number(clinic_id: int):
+    """Mendapatkan nomor antrean berikutnya untuk klinik tertentu pada hari ini."""
+    today = datetime.date.today()
     
-    return (max_queue or 0) + 1
-
-def create_queue(db: Session, queue: schemas.QueueCreate):
-    queue_number = get_next_queue_number(db, queue.clinic_id)
+    # Filter antrean untuk klinik dan hari yang sama
+    queues_today = [
+        q for q in QUEUES_DATA 
+        if q["clinic_id"] == clinic_id and q["registration_time"].date() == today
+    ]
     
-    db_queue = models.Queue(
-        patient_name=queue.patient_name,
-        clinic_id=queue.clinic_id,
-        doctor_id=queue.doctor_id,
-        queue_number=queue_number,
-        status=models.QueueStatus.MENUNGGU # Default status
-    )
-    db.add(db_queue)
-    db.commit()
-    db.refresh(db_queue)
-    return db_queue
-
-def get_queues_by_clinic(db: Session, clinic_id: int):
-    today = date.today()
-    return db.query(models.Queue).filter(
-        models.Queue.clinic_id == clinic_id,
-        func.date(models.Queue.registration_time) == today
-    ).order_by(models.Queue.queue_number).all()
-
-def update_queue_status(db: Session, queue_id: int, status: schemas.QueueStatus):
-    db_queue = db.query(models.Queue).filter(models.Queue.id == queue_id).first()
-    if db_queue:
-        db_queue.status = status
-        db.commit()
-        db.refresh(db_queue)
-    return db_queue
-    
-def get_visit_history(db: Session, patient_name: str):
-    return db.query(models.Queue).filter(models.Queue.patient_name == patient_name).all()
+    # Cari nomor antrean tertinggi
+    max_queue
