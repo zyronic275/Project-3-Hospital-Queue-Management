@@ -116,16 +116,22 @@
                     <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Form Pendaftaran Pasien Baru</h2>
                     <form id="registration-form">
                         <div class="mb-4">
-                            <label for="patient-name" class="block text-gray-700 text-sm font-bold mb-2">Nama Pasien</label>
+                            <label for="patient-name" class="block text-gray-700 text-sm font-bold mb-2">1. Nama Pasien</label>
                             <input type="text" id="patient-name" name="patient_name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
                         </div>
-                        <div class="mb-6">
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Pilih Layanan (Klinik)</label>
-                            <div id="service-options-container" class="grid grid-cols-2 gap-4">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-bold mb-2">2. Pilih Layanan (Klinik)</label>
+                            <div id="service-options-container" class="space-y-2">
                                 <!-- Opsi layanan akan dimuat di sini -->
                             </div>
                         </div>
-                        <div class="flex items-center justify-center">
+                        <div id="doctor-choice-container" class="mb-6 hidden">
+                            <label class="block text-gray-700 text-sm font-bold mb-2">3. Pilih Dokter</label>
+                            <div id="doctor-options-container" class="space-y-2 p-3 bg-gray-50 rounded-lg">
+                                <!-- Opsi dokter akan dimuat di sini -->
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-center mt-6">
                             <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg shadow">
                                 <i class="fas fa-paper-plane mr-2"></i>Daftarkan Pasien
                             </button>
@@ -143,16 +149,23 @@
                     </select>
                 </div>
                 <div id="queue-display" class="bg-white p-6 rounded-lg shadow">
-                    <h2 id="queue-clinic-name" class="text-2xl font-bold text-center mb-4">Pilih sebuah klinik</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <h3 class="font-semibold text-lg border-b pb-2 mb-2 text-yellow-600">Menunggu</h3>
-                            <ul id="waiting-list" class="list-disc pl-5 space-y-1"></ul>
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-lg border-b pb-2 mb-2 text-green-600">Sedang Dilayani</h3>
-                            <ul id="serving-list" class="list-disc pl-5 space-y-1"></ul>
-                        </div>
+                    <div class="text-center mb-4">
+                         <h2 id="queue-clinic-name" class="text-2xl font-bold">Pilih sebuah klinik</h2>
+                         <p id="queue-date" class="text-gray-600"></p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Antrean</th>
+                                    <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waktu Daftar</th>
+                                    <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queue-table-body" class="divide-y divide-gray-200">
+                                <!-- Data antrean akan dimuat di sini -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -274,7 +287,7 @@ function showAlert(message, type = 'success') {
 
     setTimeout(() => {
         alertDiv.classList.add('hidden');
-    }, 3000);
+    }, 4000);
 }
 
 // --- VIEW SWITCHING ---
@@ -310,12 +323,11 @@ function renderDashboard(data) {
         const percentage = Math.round(clinic.density_percentage);
         let bgColor = 'bg-green-100';
         let textColor = 'text-green-800';
-        let ringColor = 'ring-green-500';
 
         if (percentage > 75) {
-            bgColor = 'bg-red-100'; textColor = 'text-red-800'; ringColor = 'ring-red-500';
+            bgColor = 'bg-red-100'; textColor = 'text-red-800';
         } else if (percentage > 50) {
-            bgColor = 'bg-yellow-100'; textColor = 'text-yellow-800'; ringColor = 'ring-yellow-500';
+            bgColor = 'bg-yellow-100'; textColor = 'text-yellow-800';
         }
 
         const card = `
@@ -346,9 +358,7 @@ async function fetchDashboardData() {
     try {
         const data = await apiRequest('/admin/dashboard');
         renderDashboard(data);
-    } catch (error) {
-        // Error already handled by apiRequest
-    }
+    } catch (error) {}
 }
 
 
@@ -541,7 +551,7 @@ function renderRegistrationServiceOptions() {
     servicesCache.forEach(service => {
         const option = `
             <label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-50">
-                <input type="checkbox" name="registration-services" value="${service.id}" class="form-checkbox h-5 w-5 text-blue-600">
+                <input type="radio" name="registration-services" onchange="showDoctorChoicesForService(${service.id})" value="${service.id}" class="form-radio h-5 w-5 text-blue-600">
                 <span>${service.name}</span>
             </label>
         `;
@@ -552,25 +562,60 @@ function renderRegistrationServiceOptions() {
     });
 }
 
+function showDoctorChoicesForService(serviceId) {
+    const now = new Date();
+    const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+
+    const availableDoctors = doctorsCache.filter(d => 
+        d.services.includes(serviceId) &&
+        d.practice_start_time <= currentTime &&
+        d.practice_end_time >= currentTime
+    );
+
+    const doctorChoiceContainer = document.getElementById('doctor-choice-container');
+    const doctorOptionsContainer = document.getElementById('doctor-options-container');
+    doctorOptionsContainer.innerHTML = '';
+
+    if (availableDoctors.length > 1) {
+        availableDoctors.forEach(doctor => {
+            const option = `
+                <label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100">
+                    <input type="radio" name="registration-doctor" value="${doctor.id}" class="form-radio h-5 w-5 text-blue-600" required>
+                    <span>${doctor.name} (Kuota: ${doctor.max_patients})</span>
+                </label>
+            `;
+            doctorOptionsContainer.innerHTML += option;
+        });
+        doctorChoiceContainer.classList.remove('hidden');
+    } else {
+        doctorChoiceContainer.classList.add('hidden');
+    }
+}
+
 async function handleRegistrationFormSubmit(event) {
     event.preventDefault();
-    const selectedServices = Array.from(document.querySelectorAll('input[name="registration-services"]:checked')).map(el => parseInt(el.value));
-    
-    if (selectedServices.length === 0) {
-        showAlert('Silakan pilih setidaknya satu layanan.', 'error');
+    const selectedServiceRadio = document.querySelector('input[name="registration-services"]:checked');
+    if (!selectedServiceRadio) {
+        showAlert('Silakan pilih layanan terlebih dahulu.', 'error');
         return;
     }
+    const serviceId = parseInt(selectedServiceRadio.value);
 
+    const selectedDoctorRadio = document.querySelector('input[name="registration-doctor"]:checked');
+    const doctorId = selectedDoctorRadio ? parseInt(selectedDoctorRadio.value) : null;
+    
     const registrationData = {
         patient_name: document.getElementById('patient-name').value,
-        service_ids: selectedServices
+        service_ids: [serviceId],
+        doctor_id: doctorId
     };
     
     try {
         const response = await apiRequest('/register', 'POST', registrationData);
-        let ticketInfo = response.tickets.map(t => `${t.service.name}: ${t.queue_number}`).join('\n');
+        let ticketInfo = response.tickets.map(t => `${t.service.name} (${t.doctor.name}): ${t.queue_number}`).join('\n');
         showAlert(`Pendaftaran berhasil!\n${ticketInfo}`);
         document.getElementById('registration-form').reset();
+        document.getElementById('doctor-choice-container').classList.add('hidden');
         fetchDashboardData();
     } catch(error) {}
 }
@@ -579,25 +624,49 @@ async function handleRegistrationFormSubmit(event) {
 // --- PUBLIC QUEUE VIEW ---
 async function fetchQueueForClinic(serviceId) {
     const clinicNameH2 = document.getElementById('queue-clinic-name');
-    const waitingList = document.getElementById('waiting-list');
-    const servingList = document.getElementById('serving-list');
+    const queueDateP = document.getElementById('queue-date');
+    const queueTableBody = document.getElementById('queue-table-body');
+    queueTableBody.innerHTML = '';
 
     if (!serviceId) {
         clinicNameH2.textContent = 'Pilih sebuah klinik';
-        waitingList.innerHTML = '';
-        servingList.innerHTML = '';
+        queueDateP.textContent = '';
         return;
     }
     
     const service = servicesCache.find(s => s.id == serviceId);
     clinicNameH2.textContent = `Antrean ${service.name}`;
+    queueDateP.textContent = `Tanggal Kunjungan: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
 
     try {
         const waitingData = await apiRequest(`/queues/${serviceId}?status=waiting`);
         const servingData = await apiRequest(`/queues/${serviceId}?status=serving`);
-        
-        waitingList.innerHTML = waitingData.length > 0 ? waitingData.map(q => `<li>${q.queue_id_display}</li>`).join('') : '<li class="list-none text-gray-500">Tidak ada antrean.</li>';
-        servingList.innerHTML = servingData.length > 0 ? servingData.map(q => `<li>${q.queue_id_display}</li>`).join('') : '<li class="list-none text-gray-500">Tidak ada yang dilayani.</li>';
+        const allQueues = [...waitingData, ...servingData].sort((a, b) => a.queue_number - b.queue_number);
+
+        if (allQueues.length === 0) {
+             queueTableBody.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-gray-500">Tidak ada antrean untuk ditampilkan.</td></tr>';
+             return;
+        }
+
+        allQueues.forEach(q => {
+            const statusClass = q.status === 'waiting' 
+                ? 'bg-yellow-100 text-yellow-800' 
+                : 'bg-green-100 text-green-800';
+            const statusText = q.status === 'waiting' ? 'Menunggu' : 'Sedang Dilayani';
+            
+            const row = `
+                <tr>
+                    <td class="py-4 px-4 font-mono font-bold text-lg">${q.queue_id_display}</td>
+                    <td class="py-4 px-4 text-sm text-gray-500">${new Date(q.registration_time).toLocaleTimeString('id-ID')}</td>
+                    <td class="py-4 px-4">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
+                            ${statusText}
+                        </span>
+                    </td>
+                </tr>
+            `;
+            queueTableBody.innerHTML += row;
+        });
     } catch (error) {}
 }
 
@@ -624,8 +693,17 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchDashboardData();
     fetchAllAdminData();
 
-    // Set up auto-refresh for dashboard
-    setInterval(fetchDashboardData, 5000); // Refresh every 5 seconds
+    // Set up auto-refresh for dashboard and public queue view
+    setInterval(fetchDashboardData, 5000); 
+    setInterval(() => {
+        const currentView = document.querySelector('.view.active').id;
+        if (currentView === 'public-view') {
+            const selectedClinicId = document.getElementById('clinic-select').value;
+            if (selectedClinicId) {
+                fetchQueueForClinic(selectedClinicId);
+            }
+        }
+    }, 5000);
     
     // Set up form handlers
     document.getElementById('service-form').addEventListener('submit', handleServiceFormSubmit);
