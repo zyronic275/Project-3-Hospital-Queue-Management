@@ -15,12 +15,6 @@ class ClinicBase(BaseModel):
 
 class ClinicCreate(ClinicBase):
     pass
-<<<<<<< HEAD
-=======
-
-class ClinicUpdate(ClinicBase):
-    pass
->>>>>>> main
 
 class Clinic(ClinicBase):
     id: int
@@ -33,18 +27,6 @@ class DoctorBase(BaseModel):
 class DoctorCreate(DoctorBase):
     clinic_id: int
 
-<<<<<<< HEAD
-=======
-class DoctorUpdate(DoctorBase):
-    clinic_id: int
-    
->>>>>>> main
-class Doctor(DoctorBase):
-    id: int
-    clinic_id: int
-        
-# --- Queue Schemas ---
-class QueueBase(BaseModel):
     patient_name: str
 
 class QueueCreate(QueueBase):
