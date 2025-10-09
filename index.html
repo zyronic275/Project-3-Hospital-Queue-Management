@@ -372,7 +372,7 @@ function renderServiceTable() {
                 <td class="py-4 px-4 whitespace-nowrap">${service.name}</td>
                 <td class="py-4 px-4 whitespace-nowrap font-mono text-center bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center">${service.prefix}</td>
                 <td class="py-4 px-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button onclick="editService(${service.id})" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                    <button onclick="openServiceModal(${service.id})" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
                     <button onclick="deleteService(${service.id})" class="text-red-600 hover:text-red-900">Hapus</button>
                 </td>
             </tr>
@@ -424,7 +424,7 @@ async function handleServiceFormSubmit(event) {
 }
 
 async function deleteService(serviceId) {
-    if (confirm('Apakah Anda yakin ingin menghapus layanan ini?')) {
+    if (confirm('PERINGATAN: Menghapus layanan ini juga akan menghapus dokter yang HANYA bertugas di layanan ini. Lanjutkan?')) {
         try {
             await apiRequest(`/admin/services/${serviceId}`, 'DELETE');
             showAlert('Layanan berhasil dihapus.');
@@ -448,7 +448,7 @@ function renderDoctorTable() {
                 <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500">${doctor.practice_start_time.slice(0,5)} - ${doctor.practice_end_time.slice(0,5)}</td>
                 <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500">${doctor.max_patients}</td>
                 <td class="py-4 px-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button onclick="editDoctor(${doctor.id})" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                    <button onclick="openDoctorModal(${doctor.id})" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
                     <button onclick="deleteDoctor(${doctor.id})" class="text-red-600 hover:text-red-900">Hapus</button>
                 </td>
             </tr>
@@ -562,32 +562,29 @@ function renderRegistrationServiceOptions() {
     });
 }
 
-function showDoctorChoicesForService(serviceId) {
-    const now = new Date();
-    const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-
-    const availableDoctors = doctorsCache.filter(d => 
-        d.services.includes(serviceId) &&
-        d.practice_start_time <= currentTime &&
-        d.practice_end_time >= currentTime
-    );
-
+async function showDoctorChoicesForService(serviceId) {
     const doctorChoiceContainer = document.getElementById('doctor-choice-container');
     const doctorOptionsContainer = document.getElementById('doctor-options-container');
     doctorOptionsContainer.innerHTML = '';
 
-    if (availableDoctors.length > 1) {
-        availableDoctors.forEach(doctor => {
-            const option = `
-                <label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100">
-                    <input type="radio" name="registration-doctor" value="${doctor.id}" class="form-radio h-5 w-5 text-blue-600" required>
-                    <span>${doctor.name} (Kuota: ${doctor.max_patients})</span>
-                </label>
-            `;
-            doctorOptionsContainer.innerHTML += option;
-        });
-        doctorChoiceContainer.classList.remove('hidden');
-    } else {
+    try {
+        const availableDoctors = await apiRequest(`/services/${serviceId}/available-doctors`);
+        
+        if (availableDoctors.length > 0) {
+            availableDoctors.forEach(doctor => {
+                const option = `
+                    <label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100">
+                        <input type="radio" name="registration-doctor" value="${doctor.id}" class="form-radio h-5 w-5 text-blue-600" required>
+                        <span>${doctor.name} (Sisa Kuota: ${doctor.remaining_quota})</span>
+                    </label>
+                `;
+                doctorOptionsContainer.innerHTML += option;
+            });
+            doctorChoiceContainer.classList.remove('hidden');
+        } else {
+            doctorChoiceContainer.classList.add('hidden');
+        }
+    } catch (error) {
         doctorChoiceContainer.classList.add('hidden');
     }
 }
