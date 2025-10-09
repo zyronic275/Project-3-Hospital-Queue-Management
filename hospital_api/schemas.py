@@ -1,62 +1,89 @@
-# hospital_api/schemas.py
+from pydantic import BaseModel, Field
+from datetime import datetime, time
+from typing import List, Optional
 
-from pydantic import BaseModel
-from datetime import datetime
-import enum
+# --- Skema Dasar ---
 
-class QueueStatus(str, enum.Enum):
-    MENUNGGU = "menunggu"
-    DILAYANI = "sedang dilayani"
-    SELESAI = "selesai"
+class ServiceBase(BaseModel):
+    name: str
+    prefix: str = Field(..., max_length=1)
 
-# --- Clinic Schemas ---
-class ClinicBase(BaseModel):
+class DoctorBase(BaseModel):
+    doctor_code: str
+    name: str
+    practice_start_time: time # DITAMBAHKAN
+    practice_end_time: time
+    max_patients: int
+    services: List[int]
+
+class PatientSchema(BaseModel):
+    id: int
     name: str
 
-class ClinicCreate(ClinicBase):
-    pass
-<<<<<<< HEAD
-=======
+class QueueBase(BaseModel):
+    patient_id: int
+    service_id: int
+    doctor_id: int
 
-class ClinicUpdate(ClinicBase):
-    pass
->>>>>>> main
+# --- Skema untuk Response (Keluaran dari API) ---
 
-class Clinic(ClinicBase):
+class ServiceSchema(ServiceBase):
     id: int
 
-# --- Doctor Schemas ---
-class DoctorBase(BaseModel):
-    name: str
-    specialization: str
+class DoctorSchema(DoctorBase):
+    id: int
+
+class QueueSchema(QueueBase):
+    id: int
+    queue_id_display: str
+    queue_number: int
+    registration_time: datetime = Field(default_factory=datetime.now)
+    status: str = "waiting"
+
+class Ticket(BaseModel):
+    service: ServiceSchema
+    queue_number: str
+    doctor: DoctorSchema
+
+class RegistrationResponse(BaseModel):
+    patient: PatientSchema
+    tickets: List[Ticket]
+
+# --- Skema untuk Request (Masukan ke API) ---
+
+class ServiceCreate(ServiceBase):
+    pass
+
+class ServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    prefix: Optional[str] = Field(None, max_length=1)
 
 class DoctorCreate(DoctorBase):
-    clinic_id: int
+    pass
 
-<<<<<<< HEAD
-=======
-class DoctorUpdate(DoctorBase):
-    clinic_id: int
-    
->>>>>>> main
-class Doctor(DoctorBase):
-    id: int
-    clinic_id: int
-        
-# --- Queue Schemas ---
-class QueueBase(BaseModel):
+class DoctorUpdate(BaseModel):
+    doctor_code: Optional[str] = None
+    name: Optional[str] = None
+    practice_start_time: Optional[time] = None # DITAMBAHKAN
+    practice_end_time: Optional[time] = None
+    max_patients: Optional[int] = None
+    services: Optional[List[int]] = None
+
+class RegistrationRequest(BaseModel):
     patient_name: str
+    service_ids: List[int]
 
-class QueueCreate(QueueBase):
-    clinic_id: int
-    
-class QueueUpdateStatus(BaseModel):
-    status: QueueStatus
+class QueueStatusUpdate(BaseModel):
+    status: str
 
-class Queue(QueueBase):
-    id: int
-    queue_number: int
-    status: QueueStatus
-    registration_time: datetime
-    clinic_id: int
-    doctor_id: int
+# --- Skema untuk Monitoring ---
+class ClinicStatus(BaseModel):
+    service_id: int
+    service_name: str
+    doctors_count: int
+    max_patients_total: int
+    patients_waiting: int
+    patients_serving: int
+    total_patients_today: int
+    density_percentage: float
+

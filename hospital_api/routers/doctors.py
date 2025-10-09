@@ -1,10 +1,7 @@
 # hospital_api/routers/doctors.py
 
 from fastapi import APIRouter, HTTPException
-<<<<<<< HEAD
-=======
 from typing import List
->>>>>>> main
 from .. import schemas, storage
 
 router = APIRouter(
@@ -13,15 +10,11 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-<<<<<<< HEAD
-@router.post("/", response_model=schemas.Doctor)
-=======
 @router.get("/read", response_model=List[schemas.Doctor])
 def get_doctors():
     return storage.get_doctors()
 
 @router.post("/create", response_model=schemas.Doctor)
->>>>>>> main
 def create_doctor(doctor: schemas.DoctorCreate):
     if doctor.clinic_id not in storage.CLINICS:
         raise HTTPException(status_code=404, detail="Clinic not found")
@@ -30,10 +23,6 @@ def create_doctor(doctor: schemas.DoctorCreate):
     if not new_doctor:
         raise HTTPException(status_code=400, detail="Clinic already has an assigned doctor")
     return new_doctor
-<<<<<<< HEAD
-    
-@router.delete("/{doctor_id}", response_model=schemas.Doctor)
-=======
 
 @router.get("/read{doctor_id}", response_model=schemas.Doctor)
 def get_doctor(doctor_id: int):
@@ -60,13 +49,9 @@ def update_doctor(doctor_id: int, doctor: schemas.DoctorUpdate):
     return updated_doctor
     
 @router.delete("/delete{doctor_id}", response_model=schemas.Doctor)
->>>>>>> main
 def delete_doctor(doctor_id: int):
     db_doctor = storage.delete_doctor(doctor_id=doctor_id)
     if db_doctor is None:
         raise HTTPException(status_code=404, detail="Doctor not found")
-<<<<<<< HEAD
     return db_doctor
-=======
-    return db_doctor
->>>>>>> main
+
