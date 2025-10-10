@@ -1,12 +1,19 @@
 from pydantic import BaseModel, Field
 from datetime import datetime, time, date
 from typing import List, Optional
+from enum import Enum
+
+# --- PERUBAHAN 1: Enum Status dalam Bahasa Indonesia ---
+# Validasi sekarang akan memaksa penggunaan salah satu dari nilai ini.
+class QueueStatus(str, Enum):
+    menunggu = "menunggu"
+    sedang_dilayani = "sedang dilayani"
+    selesai = "selesai"
 
 # --- Skema Dasar ---
 
 class ServiceBase(BaseModel):
     name: str
-    # PERUBAHAN: Mengizinkan prefix hingga 4 karakter
     prefix: str = Field(..., max_length=4)
 
 class DoctorBase(BaseModel):
@@ -21,7 +28,8 @@ class PatientBase(BaseModel):
     name: str
 
 class QueueBase(BaseModel):
-    status: str = "waiting"
+    # Menggunakan Enum Bahasa Indonesia dengan nilai default 'menunggu'
+    status: QueueStatus = QueueStatus.menunggu
 
 # --- Skema untuk Membuat Data (Create) ---
 
@@ -35,7 +43,6 @@ class DoctorCreate(DoctorBase):
 
 class ServiceUpdate(BaseModel):
     name: Optional[str] = None
-    # PERUBAHAN: Mengizinkan prefix hingga 4 karakter
     prefix: Optional[str] = Field(None, max_length=4)
 
 class DoctorUpdate(BaseModel):
@@ -47,18 +54,25 @@ class DoctorUpdate(BaseModel):
     services: Optional[List[int]] = None
 
 class QueueStatusUpdate(BaseModel):
-    status: str
+    # Menggunakan Enum Bahasa Indonesia untuk validasi input
+    status: QueueStatus
 
 # --- Skema Respons API (Model Lengkap dengan ID) ---
 
 class ServiceSchema(ServiceBase):
     id: int
+    class Config:
+        from_attributes = True
 
 class DoctorSchema(DoctorBase):
     id: int
+    class Config:
+        from_attributes = True
 
 class PatientSchema(PatientBase):
     id: int
+    class Config:
+        from_attributes = True
 
 class QueueSchema(QueueBase):
     id: int
@@ -68,6 +82,8 @@ class QueueSchema(QueueBase):
     patient_id: int
     service_id: int
     doctor_id: int
+    class Config:
+        from_attributes = True
 
 # --- Skema untuk Registrasi & Tiket ---
 

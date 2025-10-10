@@ -27,17 +27,15 @@ def reset_database():
     """
     global initial_db_data, initial_id_counters
     
-    # Reset data mentah dan counter ID ke kondisi awal
     storage.db_data = copy.deepcopy(initial_db_data)
     storage.id_counters = copy.deepcopy(initial_id_counters)
 
-    # Inisialisasi ulang objek Pydantic dari data mentah secara manual
     storage.db["services"] = [schemas.ServiceSchema(**s) for s in storage.db_data["services"]]
     storage.db["doctors"] = [schemas.DoctorSchema(**d) for d in storage.db_data["doctors"]]
     storage.db["patients"] = [schemas.PatientSchema(**p) for p in storage.db_data["patients"]]
     storage.db["queues"] = []
 
-    yield # Tes akan berjalan di sini
+    yield
 
 
 # --- Tes untuk Pendaftaran Pasien ---
@@ -165,6 +163,7 @@ def test_delete_service_updates_doctor_services():
     assert updated_dr_elan is not None
     assert updated_dr_elan["services"] == [1]
 
+# --- Tes untuk Dashboard & Status ---
 @freeze_time("2025-10-09 13:00:00")
 def test_dashboard_updates_correctly():
     """Tes dasbor memberikan data yang akurat setelah pendaftaran."""
@@ -180,17 +179,51 @@ def test_dashboard_updates_correctly():
     assert poli_umum_status_after["density_percentage"] == 4.44
 
 @freeze_time("2025-10-09 14:00:00")
-def test_public_queue_display():
-    """Tes layar antrean publik menampilkan data dengan benar."""
-    client.post("/register", json={"patient_name": "Dewi", "service_ids": [4]}) # Lab
+def test_public_queue_display_and_status_update_in_indonesian():
+    """Tes layar antrean publik dan pembaruan status menggunakan Bahasa Indonesia."""
+    client.post("/register", json={"patient_name": "Dewi", "service_ids": [4]}) 
     queue_id = storage.db["queues"][-1].id
     
-    queue_response1 = client.get("/queues/4")
+    queue_response1 = client.get("/queues/4?status=menunggu")
     assert len(queue_response1.json()) == 1
-    assert queue_response1.json()[0]["status"] == "waiting"
+    assert queue_response1.json()[0]["status"] == "menunggu"
 
-    client.put(f"/queues/{queue_id}/status", json={"status": "serving"})
+    client.put(f"/queues/{queue_id}/status", json={"status": "sedang dilayani"})
+    assert len(client.get("/queues/4?status=menunggu").json()) == 0
+    assert len(client.get("/queues/4?status=sedang dilayani").json()) == 1
+    
+    client.put(f"/queues/{queue_id}/status", json={"status": "selesai"})
+    assert len(client.get("/queues/4?status=sedang dilayani").json()) == 0
+    assert len(client.get("/queues/4?status=selesai").json()) == 1
 
-    assert len(client.get("/queues/4?status=waiting").json()) == 0
-    assert len(client.get("/queues/4?status=serving").json()) == 1
+@freeze_time("2025-10-09 10:00:00")
+def test_fail_update_queue_with_invalid_status():
+    """Tes gagal memperbarui status antrean dengan nilai yang tidak valid."""
+    reg_response = client.post("/register", json={"patient_name": "Pasien Invalid", "service_ids": [1], "doctor_id": 1})
+    assert reg_response.status_code == 201
+    
+    queue_id = storage.db["queues"][-1].id
+    
+    response = client.put(f"/queues/{queue_id}/status", json={"status": "invalid_status"})
+    assert response.status_code == 422
+
+@freeze_time("2025-10-09 10:00:00")
+def test_dashboard_density_decreases_after_finish():
+    """Tes kepadatan di dasbor berkurang setelah pasien selesai."""
+    client.post("/register", json={"patient_name": "Pasien Uji", "service_ids": [1], "doctor_id": 1})
+    queue_id = storage.db["queues"][-1].id
+
+    dashboard_before = client.get("/admin/dashboard").json()
+    poli_umum_before = next(s for s in dashboard_before if s["service_id"] == 1)
+    assert poli_umum_before["patients_waiting"] == 1
+    assert poli_umum_before["density_percentage"] > 0
+
+    client.put(f"/queues/{queue_id}/status", json={"status": "selesai"})
+
+    dashboard_after = client.get("/admin/dashboard").json()
+    poli_umum_after = next(s for s in dashboard_after if s["service_id"] == 1)
+    assert poli_umum_after["patients_waiting"] == 0
+    assert poli_umum_after["patients_serving"] == 0
+    assert poli_umum_after["density_percentage"] == 0
+    assert poli_umum_after["total_patients_today"] == 1
 
