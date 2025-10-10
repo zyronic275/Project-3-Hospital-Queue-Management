@@ -6,7 +6,8 @@ from typing import List, Optional
 
 class ServiceBase(BaseModel):
     name: str
-    prefix: str = Field(..., max_length=1)
+    # PERUBAHAN: Mengizinkan prefix hingga 4 karakter
+    prefix: str = Field(..., max_length=4)
 
 class DoctorBase(BaseModel):
     doctor_code: str
@@ -34,7 +35,8 @@ class DoctorCreate(DoctorBase):
 
 class ServiceUpdate(BaseModel):
     name: Optional[str] = None
-    prefix: Optional[str] = Field(None, max_length=1)
+    # PERUBAHAN: Mengizinkan prefix hingga 4 karakter
+    prefix: Optional[str] = Field(None, max_length=4)
 
 class DoctorUpdate(BaseModel):
     doctor_code: Optional[str] = None
