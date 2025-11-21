@@ -24,8 +24,32 @@ class DoctorBase(BaseModel):
 
 class PatientBase(BaseModel):
     name: str
-    # NEW: Date of Birth
-    date_of_birth: Optional[date] = None
+    age: int
+    gender: str
+    blood_type: str
+    medical_condition: str
+    date_of_admission: str
+    doctor: str
+    hospital: str
+    insurance_provider: str
+    billing_amount: float
+    room_number: int
+    admission_type: str
+    discharge_date: str
+    medication: str
+    test_results: str
+    # Fixed: Added missing priority field from CSV
+    priority: str = "Normal"
+
+class PatientCreate(PatientBase):
+    pass
+
+class Patient(PatientBase):
+    # Fixed: Added ID so we can safely find patients
+    id: int 
+
+    class Config:
+        from_attributes = True
 
 class QueueBase(BaseModel):
     status: QueueStatus = QueueStatus.menunggu
