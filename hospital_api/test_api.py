@@ -35,10 +35,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    """
-    This fixture runs automatically before every test function.
-    It creates fresh tables, runs the test, and then drops the tables.
-    """
+    """Fixture to create and drop tables around each test."""
     # Create tables
     Base.metadata.create_all(bind=engine)
     yield
