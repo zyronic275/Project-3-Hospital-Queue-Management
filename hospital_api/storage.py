@@ -1,9 +1,15 @@
 from sqlalchemy import create_engine, Column, Integer, String, Time, Date, ForeignKey, Table, DateTime
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 import datetime
+import os
 
 # 1. Database Connection
-DATABASE_URL = "sqlite:///./hospital.db"
+# --- FIX: Use Absolute Path ---
+# This ensures the DB is always found next to storage.py, 
+# no matter where you run the terminal command from.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'hospital.db')}"
+
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
