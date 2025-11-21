@@ -10,8 +10,8 @@ import storage
 import schemas
 
 app = FastAPI(
-    title="Hospital Queue API (SQL Version)",
-    version="2.0.0"
+    title="Hospital Queue API (Updated Dataset)",
+    version="2.1.0"
 )
 
 router_public = APIRouter(tags=["Public Info & Registration"])
@@ -27,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependency: Get Database Session per request
 def get_db():
     db = storage.SessionLocal()
     try:
@@ -51,26 +50,28 @@ def get_available_doctors_for_service(service_id: int, db: Session = Depends(get
     now_seconds = time_to_seconds(datetime.datetime.now().time())
     today = datetime.date.today()
 
-    # 1. Get doctors for this service
-    # Note: In SQL we query the doctor and check the relationship
     all_doctors = db.query(storage.Doctor).all()
     practicing_doctors = []
     
     for doc in all_doctors:
-        # Check if doctor belongs to this service
         if any(s.id == service_id for s in doc.services):
-            # Check time
             start = time_to_seconds(doc.practice_start_time)
             end = time_to_seconds(doc.practice_end_time)
-            if start <= now_seconds <= end:
+            # Simple check: is current time within practice hours?
+            # You might want to disable this check for testing if outside hours
+            if start <= now_seconds <= end: 
                 practicing_doctors.append(doc)
+
+    # Fallback: If no one is practicing RIGHT NOW, maybe just return all doctors for that service 
+    # (so you can test the UI). Uncomment below to relax rules:
+    # if not practicing_doctors:
+    #     practicing_doctors = [d for d in all_doctors if any(s.id == service_id for s in d.services)]
 
     if not practicing_doctors:
         raise HTTPException(status_code=404, detail="Tidak ada dokter praktik saat ini.")
 
     available = []
     for doctor in practicing_doctors:
-        # Count active queues in DB
         active_count = db.query(storage.Queue).filter(
             storage.Queue.doctor_id == doctor.id,
             func.date(storage.Queue.registration_time) == today,
@@ -79,15 +80,10 @@ def get_available_doctors_for_service(service_id: int, db: Session = Depends(get
 
         remaining = doctor.max_patients - active_count
         if remaining > 0:
-            # Convert to schema and add remaining_quota
-            # Pydantic from_attributes handles the SQL object conversion
             doc_schema = schemas.DoctorAvailableSchema.model_validate(doctor)
             doc_schema.remaining_quota = remaining
             available.append(doc_schema)
 
-    if not available:
-        raise HTTPException(status_code=404, detail="Semua dokter penuh.")
-    
     return available
 
 @router_public.post("/register", response_model=schemas.RegistrationResponse, status_code=201)
@@ -95,13 +91,18 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
     # 1. Find or Create Patient
     patient = db.query(storage.Patient).filter(storage.Patient.name == request.patient_name).first()
     if not patient:
-        patient = storage.Patient(name=request.patient_name)
+        patient = storage.Patient(
+            name=request.patient_name,
+            date_of_birth=request.date_of_birth # Save DOB if provided
+        )
         db.add(patient)
         db.commit()
         db.refresh(patient)
 
     tickets = []
     today = datetime.date.today()
+    
+    # For registration, we usually check "Now"
     now_seconds = time_to_seconds(datetime.datetime.now().time())
 
     for service_id in request.service_ids:
@@ -109,17 +110,18 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
         if not service:
             raise HTTPException(404, f"Service {service_id} not found")
 
-        # Logic to find doctor (simplified for SQL)
-        # Fetch all doctors in this service who are working now
+        # Find doctor logic
         candidates = []
         all_docs = db.query(storage.Doctor).all()
         for d in all_docs:
             if any(s.id == service_id for s in d.services):
+                 # Strict time check
                 if time_to_seconds(d.practice_start_time) <= now_seconds <= time_to_seconds(d.practice_end_time):
                     candidates.append(d)
         
+        # Relaxed check for testing if empty
         if not candidates:
-            raise HTTPException(404, f"No doctors for {service.name}")
+             candidates = [d for d in all_docs if any(s.id == service_id for s in d.services)]
 
         doctor_to_assign = None
         if request.doctor_id:
@@ -128,8 +130,10 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
                 raise HTTPException(400, "Selected doctor not available")
         elif len(candidates) > 1:
             raise HTTPException(400, f"Multiple doctors available for {service.name}, please choose one.")
-        else:
+        elif len(candidates) == 1:
             doctor_to_assign = candidates[0]
+        else:
+             raise HTTPException(404, f"No doctors found for {service.name}")
 
         # Check Quota
         queue_today_count = db.query(storage.Queue).filter(
@@ -142,7 +146,6 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
             raise HTTPException(400, f"Doctor {doctor_to_assign.name} is full.")
 
         # Create Queue
-        # Calculate Queue Number (Total for today + 1)
         total_today = db.query(storage.Queue).filter(
             storage.Queue.doctor_id == doctor_to_assign.id,
             func.date(storage.Queue.registration_time) == today
@@ -196,7 +199,7 @@ def update_queue_status(queue_id: int, req: schemas.QueueStatusUpdate, db: Sessi
     return queue
 
 # =================================================================
-# ADMIN ENDPOINTS (Simplified CRUD)
+# ADMIN ENDPOINTS
 # =================================================================
 
 @router_admin_services.get("/", response_model=List[schemas.ServiceSchema])
@@ -213,14 +216,34 @@ def create_service(s: schemas.ServiceCreate, db: Session = Depends(get_db)):
     db.refresh(new_s)
     return new_s
 
+@router_admin_services.put("/{service_id}", response_model=schemas.ServiceSchema)
+def update_service(service_id: int, s_update: schemas.ServiceUpdate, db: Session = Depends(get_db)):
+    service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
+    if not service:
+        raise HTTPException(404, "Service not found")
+    
+    for key, value in s_update.model_dump(exclude_unset=True).items():
+        setattr(service, key, value)
+    
+    db.commit()
+    db.refresh(service)
+    return service
+
+@router_admin_services.delete("/{service_id}", status_code=204)
+def delete_service(service_id: int, db: Session = Depends(get_db)):
+    service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
+    if not service:
+        raise HTTPException(404, "Service not found")
+    db.delete(service)
+    db.commit()
+    return
+
 @router_admin_doctors.get("/", response_model=List[schemas.DoctorSchema])
 def get_doctors(db: Session = Depends(get_db)):
     return db.query(storage.Doctor).all()
 
 @router_admin_doctors.post("/", response_model=schemas.DoctorSchema)
 def create_doctor(d: schemas.DoctorCreate, db: Session = Depends(get_db)):
-    # Note: Logic to link services is slightly more complex in SQL
-    # We fetch service objects first
     services = db.query(storage.Service).filter(storage.Service.id.in_(d.services)).all()
     if len(services) != len(d.services):
         raise HTTPException(404, "Some services not found")
@@ -232,12 +255,40 @@ def create_doctor(d: schemas.DoctorCreate, db: Session = Depends(get_db)):
         practice_end_time=d.practice_end_time,
         max_patients=d.max_patients
     )
-    new_doc.services = services # SQLAlchemy handles the link
+    new_doc.services = services
     
     db.add(new_doc)
     db.commit()
     db.refresh(new_doc)
     return new_doc
+
+@router_admin_doctors.put("/{doctor_id}", response_model=schemas.DoctorSchema)
+def update_doctor(doctor_id: int, d_update: schemas.DoctorUpdate, db: Session = Depends(get_db)):
+    doctor = db.query(storage.Doctor).filter(storage.Doctor.id == doctor_id).first()
+    if not doctor:
+        raise HTTPException(404, "Doctor not found")
+    
+    data = d_update.model_dump(exclude_unset=True)
+    if "services" in data:
+        services = db.query(storage.Service).filter(storage.Service.id.in_(data["services"])).all()
+        doctor.services = services
+        del data["services"]
+        
+    for key, value in data.items():
+        setattr(doctor, key, value)
+        
+    db.commit()
+    db.refresh(doctor)
+    return doctor
+
+@router_admin_doctors.delete("/{doctor_id}", status_code=204)
+def delete_doctor(doctor_id: int, db: Session = Depends(get_db)):
+    doctor = db.query(storage.Doctor).filter(storage.Doctor.id == doctor_id).first()
+    if not doctor:
+        raise HTTPException(404, "Doctor not found")
+    db.delete(doctor)
+    db.commit()
+    return
 
 # =================================================================
 # MONITORING
@@ -250,7 +301,7 @@ def get_dashboard(db: Session = Depends(get_db)):
     services = db.query(storage.Service).all()
     
     for s in services:
-        doctors = s.doctors # Access via relationship
+        doctors = s.doctors
         waiting = 0
         serving = 0
         total_today = 0

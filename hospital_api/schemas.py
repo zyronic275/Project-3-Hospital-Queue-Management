@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime, time
+from datetime import datetime, time, date
 from typing import List, Optional, Any
 from enum import Enum
 
@@ -8,7 +8,7 @@ class QueueStatus(str, Enum):
     sedang_dilayani = "sedang dilayani"
     selesai = "selesai"
 
-# --- Skema Dasar ---
+# --- Base Schemas ---
 
 class ServiceBase(BaseModel):
     name: str
@@ -20,11 +20,12 @@ class DoctorBase(BaseModel):
     practice_start_time: time
     practice_end_time: time
     max_patients: int
-    # Input expects IDs
     services: List[int] 
 
 class PatientBase(BaseModel):
     name: str
+    # NEW: Date of Birth
+    date_of_birth: Optional[date] = None
 
 class QueueBase(BaseModel):
     status: QueueStatus = QueueStatus.menunggu
@@ -52,7 +53,7 @@ class DoctorUpdate(BaseModel):
 class QueueStatusUpdate(BaseModel):
     status: QueueStatus
 
-# --- Response Schemas (The Important Fix) ---
+# --- Response Schemas ---
 
 class ServiceSchema(ServiceBase):
     id: int
@@ -61,14 +62,11 @@ class ServiceSchema(ServiceBase):
 
 class DoctorSchema(DoctorBase):
     id: int
-    
     class Config:
         from_attributes = True
 
-    # FIX: This converts the SQL "List of Service Objects" into "List of Ints"
     @field_validator('services', mode='before')
     def parse_services(cls, v: Any):
-        # If v is a list of objects (SQLAlchemy models), extract IDs
         if v and isinstance(v, list) and hasattr(v[0], 'id'):
             return [item.id for item in v]
         return v
@@ -100,6 +98,8 @@ class Ticket(BaseModel):
 
 class RegistrationRequest(BaseModel):
     patient_name: str
+    # NEW: Optional Date of Birth during registration
+    date_of_birth: Optional[date] = None
     service_ids: List[int]
     doctor_id: Optional[int] = None
 

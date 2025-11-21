@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Time, ForeignKey, Table, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Time, Date, ForeignKey, Table, DateTime
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 import datetime
 
@@ -8,14 +8,14 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# 2. Association Table (Since one Doctor can work in multiple Services)
+# 2. Association Table
 doctor_service_association = Table(
     'doctor_services', Base.metadata,
     Column('doctor_id', Integer, ForeignKey('doctors.id')),
     Column('service_id', Integer, ForeignKey('services.id'))
 )
 
-# 3. Define Tables (Models)
+# 3. Define Tables
 class Service(Base):
     __tablename__ = "services"
     id = Column(Integer, primary_key=True, index=True)
@@ -30,16 +30,16 @@ class Doctor(Base):
     practice_start_time = Column(Time)
     practice_end_time = Column(Time)
     max_patients = Column(Integer, default=20)
-    
-    # Relationship to Services (Many-to-Many)
     services = relationship("Service", secondary=doctor_service_association, backref="doctors")
 
 class Patient(Base):
     __tablename__ = "patients"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    age = Column(Integer, nullable=True)      # Added from CSV
-    gender = Column(String, nullable=True)    # Added from CSV
+    age = Column(Integer, nullable=True)
+    gender = Column(String, nullable=True)
+    # NEW: Date of Birth field
+    date_of_birth = Column(Date, nullable=True)
 
 class Queue(Base):
     __tablename__ = "queues"
@@ -49,16 +49,13 @@ class Queue(Base):
     status = Column(String, default="menunggu")
     registration_time = Column(DateTime, default=datetime.datetime.now)
     
-    # Foreign Keys
     patient_id = Column(Integer, ForeignKey("patients.id"))
     service_id = Column(Integer, ForeignKey("services.id"))
     doctor_id = Column(Integer, ForeignKey("doctors.id"))
 
-    # Relationships
     patient = relationship("Patient")
     service = relationship("Service")
     doctor = relationship("Doctor")
 
-# 4. Helper to create tables
 def init_db():
     Base.metadata.create_all(bind=engine)
