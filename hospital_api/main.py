@@ -1,20 +1,17 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from typing import List, Optional
 import datetime
+from sqlalchemy import func
 
-# Impor dari file lokal
-from . import storage
-from . import schemas
-
-# =================================================================
-# BAGIAN 1: INISIALISASI APLIKASI UTAMA DAN ROUTER
-# =================================================================
+# Local imports
+import storage
+import schemas
 
 app = FastAPI(
-    title="Hospital Queue Management API (Router Version)",
-    description="API yang diorganisir menggunakan APIRouter untuk skalabilitas.",
-    version="1.7.0"
+    title="Hospital Queue API (SQL Version)",
+    version="2.0.0"
 )
 
 router_public = APIRouter(tags=["Public Info & Registration"])
@@ -30,314 +27,262 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-def load_initial_data():
-    """Memuat dan mengonversi data awal ke model Pydantic saat aplikasi dimulai."""
-    storage.db["services"] = [schemas.ServiceSchema(**s) for s in storage.db_data["services"]]
-    storage.db["doctors"] = [schemas.DoctorSchema(**d) for d in storage.db_data["doctors"]]
-    storage.db["patients"] = [schemas.PatientSchema(**p) for p in storage.db_data["patients"]]
-    storage.db["queues"] = []
-
+# Dependency: Get Database Session per request
+def get_db():
+    db = storage.SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # =================================================================
-# BAGIAN 2: ENDPOINT PUBLIK (INFO, REGISTRASI & ANTRIAN)
+# PUBLIC ENDPOINTS
 # =================================================================
 
 def time_to_seconds(t: datetime.time) -> int:
-    """Fungsi bantuan untuk mengubah objek waktu menjadi detik sejak tengah malam."""
     return t.hour * 3600 + t.minute * 60 + t.second
 
 @router_public.get("/services/{service_id}/available-doctors", response_model=List[schemas.DoctorAvailableSchema])
-def get_available_doctors_for_service(service_id: int):
-    service = next((s for s in storage.db["services"] if s.id == service_id), None)
+def get_available_doctors_for_service(service_id: int, db: Session = Depends(get_db)):
+    service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
     if not service:
-        raise HTTPException(status_code=404, detail=f"Layanan dengan id {service_id} tidak ditemukan")
+        raise HTTPException(status_code=404, detail=f"Layanan {service_id} tidak ditemukan")
 
-    now_in_seconds = time_to_seconds(datetime.datetime.now().time())
+    now_seconds = time_to_seconds(datetime.datetime.now().time())
     today = datetime.date.today()
 
-    practicing_doctors = [
-        d for d in storage.db["doctors"]
-        if service_id in d.services and \
-           time_to_seconds(d.practice_start_time) <= now_in_seconds and \
-           time_to_seconds(d.practice_end_time) >= now_in_seconds
-    ]
+    # 1. Get doctors for this service
+    # Note: In SQL we query the doctor and check the relationship
+    all_doctors = db.query(storage.Doctor).all()
+    practicing_doctors = []
     
+    for doc in all_doctors:
+        # Check if doctor belongs to this service
+        if any(s.id == service_id for s in doc.services):
+            # Check time
+            start = time_to_seconds(doc.practice_start_time)
+            end = time_to_seconds(doc.practice_end_time)
+            if start <= now_seconds <= end:
+                practicing_doctors.append(doc)
+
     if not practicing_doctors:
-          raise HTTPException(status_code=404, detail=f"Tidak ada dokter yang sedang praktik untuk layanan {service.name} saat ini.")
+        raise HTTPException(status_code=404, detail="Tidak ada dokter praktik saat ini.")
 
-    available_doctors_with_quota = []
+    available = []
     for doctor in practicing_doctors:
-        active_queue_count = len([
-            q for q in storage.db["queues"]
-            if q.doctor_id == doctor.id and \
-               q.registration_time.date() == today and \
-               q.status != schemas.QueueStatus.selesai
-        ])
-        remaining_quota = doctor.max_patients - active_queue_count
-        if remaining_quota > 0:
-            doctor_data = doctor.model_dump()
-            doctor_data["remaining_quota"] = remaining_quota
-            available_doctors_with_quota.append(doctor_data)
+        # Count active queues in DB
+        active_count = db.query(storage.Queue).filter(
+            storage.Queue.doctor_id == doctor.id,
+            func.date(storage.Queue.registration_time) == today,
+            storage.Queue.status != "selesai"
+        ).count()
 
-    if not available_doctors_with_quota:
-        raise HTTPException(status_code=404, detail=f"Semua dokter untuk layanan {service.name} sudah penuh.")
+        remaining = doctor.max_patients - active_count
+        if remaining > 0:
+            # Convert to schema and add remaining_quota
+            # Pydantic from_attributes handles the SQL object conversion
+            doc_schema = schemas.DoctorAvailableSchema.model_validate(doctor)
+            doc_schema.remaining_quota = remaining
+            available.append(doc_schema)
 
-    return available_doctors_with_quota
-
+    if not available:
+        raise HTTPException(status_code=404, detail="Semua dokter penuh.")
+    
+    return available
 
 @router_public.post("/register", response_model=schemas.RegistrationResponse, status_code=201)
-def register_patient(request: schemas.RegistrationRequest):
-    patient = next((p for p in storage.db["patients"] if p.name.lower() == request.patient_name.lower()), None)
+def register_patient(request: schemas.RegistrationRequest, db: Session = Depends(get_db)):
+    # 1. Find or Create Patient
+    patient = db.query(storage.Patient).filter(storage.Patient.name == request.patient_name).first()
     if not patient:
-        storage.id_counters["patients"] += 1
-        patient = schemas.PatientSchema(id=storage.id_counters["patients"], name=request.patient_name)
-        storage.db["patients"].append(patient)
+        patient = storage.Patient(name=request.patient_name)
+        db.add(patient)
+        db.commit()
+        db.refresh(patient)
 
     tickets = []
     today = datetime.date.today()
-    now_in_seconds = time_to_seconds(datetime.datetime.now().time())
+    now_seconds = time_to_seconds(datetime.datetime.now().time())
 
     for service_id in request.service_ids:
-        service = next((s for s in storage.db["services"] if s.id == service_id), None)
+        service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
         if not service:
-            raise HTTPException(status_code=404, detail=f"Layanan dengan id {service_id} tidak ditemukan")
+            raise HTTPException(404, f"Service {service_id} not found")
 
-        practicing_doctors = [
-            d for d in storage.db["doctors"]
-            if service_id in d.services and \
-               time_to_seconds(d.practice_start_time) <= now_in_seconds and \
-               time_to_seconds(d.practice_end_time) >= now_in_seconds
-        ]
+        # Logic to find doctor (simplified for SQL)
+        # Fetch all doctors in this service who are working now
+        candidates = []
+        all_docs = db.query(storage.Doctor).all()
+        for d in all_docs:
+            if any(s.id == service_id for s in d.services):
+                if time_to_seconds(d.practice_start_time) <= now_seconds <= time_to_seconds(d.practice_end_time):
+                    candidates.append(d)
         
-        if not practicing_doctors:
-            raise HTTPException(status_code=404, detail=f"Tidak ada dokter yang praktik untuk layanan {service.name} saat ini.")
+        if not candidates:
+            raise HTTPException(404, f"No doctors for {service.name}")
 
         doctor_to_assign = None
         if request.doctor_id:
-            chosen_doctor = next((d for d in practicing_doctors if d.id == request.doctor_id), None)
-            if not chosen_doctor:
-                raise HTTPException(status_code=400, detail="Dokter yang dipilih tidak praktik atau tidak melayani layanan ini saat ini.")
-            doctor_to_assign = chosen_doctor
-        elif len(practicing_doctors) > 1:
-             raise HTTPException(status_code=400, detail=f"Terdapat lebih dari satu dokter yang tersedia untuk {service.name}. Harap pilih salah satu.")
+            doctor_to_assign = next((d for d in candidates if d.id == request.doctor_id), None)
+            if not doctor_to_assign:
+                raise HTTPException(400, "Selected doctor not available")
+        elif len(candidates) > 1:
+            raise HTTPException(400, f"Multiple doctors available for {service.name}, please choose one.")
         else:
-            doctor_to_assign = practicing_doctors[0]
-        
-        active_queues_for_doctor = [
-            q for q in storage.db["queues"]
-            if q.doctor_id == doctor_to_assign.id and \
-               q.registration_time.date() == today and \
-               q.status != schemas.QueueStatus.selesai
-        ]
-        if len(active_queues_for_doctor) >= doctor_to_assign.max_patients:
-            raise HTTPException(status_code=400, detail=f"Kuota untuk dokter {doctor_to_assign.name} sudah penuh.")
+            doctor_to_assign = candidates[0]
 
-        new_queue_number = len([q for q in storage.db["queues"] if q.doctor_id == doctor_to_assign.id and q.registration_time.date() == today]) + 1
-        queue_id_display = f"{service.prefix}-{doctor_to_assign.doctor_code}-{new_queue_number:03d}"
+        # Check Quota
+        queue_today_count = db.query(storage.Queue).filter(
+            storage.Queue.doctor_id == doctor_to_assign.id,
+            func.date(storage.Queue.registration_time) == today,
+            storage.Queue.status != "selesai"
+        ).count()
+
+        if queue_today_count >= doctor_to_assign.max_patients:
+            raise HTTPException(400, f"Doctor {doctor_to_assign.name} is full.")
+
+        # Create Queue
+        # Calculate Queue Number (Total for today + 1)
+        total_today = db.query(storage.Queue).filter(
+            storage.Queue.doctor_id == doctor_to_assign.id,
+            func.date(storage.Queue.registration_time) == today
+        ).count()
         
-        storage.id_counters["queues"] += 1
-        new_queue = schemas.QueueSchema(
-            id=storage.id_counters["queues"],
-            queue_id_display=queue_id_display,
-            queue_number=new_queue_number,
+        new_num = total_today + 1
+        display_id = f"{service.prefix}-{doctor_to_assign.doctor_code}-{new_num:03d}"
+
+        new_queue = storage.Queue(
+            queue_id_display=display_id,
+            queue_number=new_num,
+            status="menunggu",
             patient_id=patient.id,
             service_id=service.id,
             doctor_id=doctor_to_assign.id,
             registration_time=datetime.datetime.now()
         )
-        storage.db["queues"].append(new_queue)
-        
+        db.add(new_queue)
+        db.commit()
+        db.refresh(new_queue)
+
         tickets.append(schemas.Ticket(
-            service=service, 
-            queue_number=new_queue.queue_id_display, 
+            service=service,
+            queue_number=display_id,
             doctor=doctor_to_assign
         ))
-            
+
     return schemas.RegistrationResponse(patient=patient, tickets=tickets)
 
 @router_public.get("/queues/{service_id}", response_model=List[schemas.QueueSchema])
-def get_queue_for_service(service_id: int, status: Optional[schemas.QueueStatus] = None):
+def get_queue_for_service(service_id: int, status: Optional[str] = None, db: Session = Depends(get_db)):
     today = datetime.date.today()
-    queues = [
-        q for q in storage.db["queues"] 
-        if q.service_id == service_id and q.registration_time.date() == today
-    ]
+    query = db.query(storage.Queue).filter(
+        storage.Queue.service_id == service_id,
+        func.date(storage.Queue.registration_time) == today
+    )
     if status:
-        queues = [q for q in queues if q.status == status]
-        
-    queues.sort(key=lambda q: q.queue_number)
-    return queues
+        query = query.filter(storage.Queue.status == status)
+    
+    return query.order_by(storage.Queue.queue_number).all()
 
 @router_public.put("/queues/{queue_id}/status", response_model=schemas.QueueSchema)
-def update_queue_status(queue_id: int, request_body: schemas.QueueStatusUpdate):
-    queue = next((q for q in storage.db["queues"] if q.id == queue_id), None)
+def update_queue_status(queue_id: int, req: schemas.QueueStatusUpdate, db: Session = Depends(get_db)):
+    queue = db.query(storage.Queue).filter(storage.Queue.id == queue_id).first()
     if not queue:
-        raise HTTPException(status_code=404, detail="Antrean tidak ditemukan")
+        raise HTTPException(404, "Queue not found")
     
-    queue.status = request_body.status
+    queue.status = req.status
+    db.commit()
+    db.refresh(queue)
     return queue
 
 # =================================================================
-# BAGIAN 3: ENDPOINT UNTUK ADMIN (MANAJEMEN LAYANAN)
+# ADMIN ENDPOINTS (Simplified CRUD)
 # =================================================================
+
 @router_admin_services.get("/", response_model=List[schemas.ServiceSchema])
-def get_services():
-    return storage.db["services"]
+def get_services(db: Session = Depends(get_db)):
+    return db.query(storage.Service).all()
 
-@router_admin_services.post("/", response_model=schemas.ServiceSchema, status_code=201)
-def create_service(service: schemas.ServiceCreate):
-    if any(s.prefix.lower() == service.prefix.lower() for s in storage.db["services"]):
-        raise HTTPException(status_code=400, detail=f"Prefix '{service.prefix}' sudah digunakan oleh layanan lain.")
-    
-    storage.id_counters["services"] += 1
-    new_service = schemas.ServiceSchema(id=storage.id_counters["services"], **service.model_dump())
-    storage.db["services"].append(new_service)
-    return new_service
+@router_admin_services.post("/", response_model=schemas.ServiceSchema)
+def create_service(s: schemas.ServiceCreate, db: Session = Depends(get_db)):
+    if db.query(storage.Service).filter(storage.Service.prefix == s.prefix).first():
+        raise HTTPException(400, "Prefix exists")
+    new_s = storage.Service(**s.model_dump())
+    db.add(new_s)
+    db.commit()
+    db.refresh(new_s)
+    return new_s
 
-@router_admin_services.put("/{service_id}", response_model=schemas.ServiceSchema)
-def update_service(service_id: int, service_update: schemas.ServiceUpdate):
-    service = next((s for s in storage.db["services"] if s.id == service_id), None)
-    if not service:
-        raise HTTPException(status_code=404, detail="Layanan tidak ditemukan")
-    
-    update_data = service_update.model_dump(exclude_unset=True)
-
-    if "prefix" in update_data:
-        if any(s.prefix.lower() == update_data["prefix"].lower() and s.id != service_id for s in storage.db["services"]):
-            raise HTTPException(status_code=400, detail=f"Prefix '{update_data['prefix']}' sudah digunakan oleh layanan lain.")
-
-    for key, value in update_data.items():
-        setattr(service, key, value)
-    return service
-
-@router_admin_services.delete("/{service_id}", status_code=204)
-def delete_service(service_id: int):
-    service_index = next((i for i, s in enumerate(storage.db["services"]) if s.id == service_id), -1)
-    if service_index == -1:
-        raise HTTPException(status_code=404, detail="Layanan tidak ditemukan")
-    
-    doctors_to_remove = []
-    for doctor in storage.db["doctors"]:
-        if service_id in doctor.services:
-            if len(doctor.services) == 1:
-                doctors_to_remove.append(doctor.id)
-            else:
-                doctor.services.remove(service_id)
-
-    if doctors_to_remove:
-        storage.db["doctors"] = [d for d in storage.db["doctors"] if d.id not in doctors_to_remove]
-
-    storage.db["services"].pop(service_index)
-    return
-
-# =================================================================
-# BAGIAN 4: ENDPOINT UNTUK ADMIN (MANAJEMEN DOKTER)
-# =================================================================
 @router_admin_doctors.get("/", response_model=List[schemas.DoctorSchema])
-def get_doctors():
-    return storage.db["doctors"]
+def get_doctors(db: Session = Depends(get_db)):
+    return db.query(storage.Doctor).all()
 
-@router_admin_doctors.post("/", response_model=schemas.DoctorSchema, status_code=201)
-def create_doctor(doctor_req: schemas.DoctorCreate):
-    for service_id in doctor_req.services:
-        for existing_doctor in storage.db["doctors"]:
-            if service_id in existing_doctor.services and existing_doctor.doctor_code == doctor_req.doctor_code:
-                service = next((s for s in storage.db["services"] if s.id == service_id), None)
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Kode dokter '{doctor_req.doctor_code}' sudah digunakan di {service.name} oleh {existing_doctor.name}."
-                )
-
-    for sid in doctor_req.services:
-        if not any(s.id == sid for s in storage.db["services"]):
-            raise HTTPException(status_code=404, detail=f"Layanan dengan id {sid} tidak ditemukan")
+@router_admin_doctors.post("/", response_model=schemas.DoctorSchema)
+def create_doctor(d: schemas.DoctorCreate, db: Session = Depends(get_db)):
+    # Note: Logic to link services is slightly more complex in SQL
+    # We fetch service objects first
+    services = db.query(storage.Service).filter(storage.Service.id.in_(d.services)).all()
+    if len(services) != len(d.services):
+        raise HTTPException(404, "Some services not found")
     
-    storage.id_counters["doctors"] += 1
-    new_doctor = schemas.DoctorSchema(id=storage.id_counters["doctors"], **doctor_req.model_dump())
-    storage.db["doctors"].append(new_doctor)
-    return new_doctor
-
-@router_admin_doctors.put("/{doctor_id}", response_model=schemas.DoctorSchema)
-def update_doctor(doctor_id: int, doctor_update: schemas.DoctorUpdate):
-    doctor = next((d for d in storage.db["doctors"] if d.id == doctor_id), None)
-    if not doctor:
-        raise HTTPException(status_code=404, detail="Dokter tidak ditemukan")
-
-    update_data = doctor_update.model_dump(exclude_unset=True)
+    new_doc = storage.Doctor(
+        doctor_code=d.doctor_code,
+        name=d.name,
+        practice_start_time=d.practice_start_time,
+        practice_end_time=d.practice_end_time,
+        max_patients=d.max_patients
+    )
+    new_doc.services = services # SQLAlchemy handles the link
     
-    check_code = update_data.get("doctor_code", doctor.doctor_code)
-    check_services = update_data.get("services", doctor.services)
-
-    for service_id in check_services:
-        for existing_doctor in storage.db["doctors"]:
-            if existing_doctor.id != doctor_id and service_id in existing_doctor.services and existing_doctor.doctor_code == check_code:
-                service = next((s for s in storage.db["services"] if s.id == service_id), None)
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Kode dokter '{check_code}' sudah digunakan di {service.name} oleh {existing_doctor.name}."
-                )
-
-    if "services" in update_data:
-        for sid in update_data["services"]:
-            if not any(s.id == sid for s in storage.db["services"]):
-                raise HTTPException(status_code=404, detail=f"Layanan dengan id {sid} tidak ditemukan")
-
-    for key, value in update_data.items():
-        setattr(doctor, key, value)
-    return doctor
-
-@router_admin_doctors.delete("/{doctor_id}", status_code=204)
-def delete_doctor(doctor_id: int):
-    doctor_index = next((i for i, d in enumerate(storage.db["doctors"]) if d.id == doctor_id), -1)
-    if doctor_index == -1:
-        raise HTTPException(status_code=404, detail="Dokter tidak ditemukan")
-    storage.db["doctors"].pop(doctor_index)
-    return
+    db.add(new_doc)
+    db.commit()
+    db.refresh(new_doc)
+    return new_doc
 
 # =================================================================
-# BAGIAN 5: ENDPOINT UNTUK MONITORING
+# MONITORING
 # =================================================================
+
 @router_monitoring.get("/dashboard", response_model=List[schemas.ClinicStatus])
-def get_monitoring_dashboard():
-    dashboard_data = []
+def get_dashboard(db: Session = Depends(get_db)):
+    data = []
     today = datetime.date.today()
-    for service in storage.db["services"]:
-        doctors_in_service = [d for d in storage.db["doctors"] if service.id in d.services]
-        total_patients_waiting = 0
-        total_patients_serving = 0
-        total_patients_today = 0
-        total_max_patients = 0
-        for doctor in doctors_in_service:
-            queues_today_for_doctor = [q for q in storage.db["queues"] if q.doctor_id == doctor.id and q.registration_time.date() == today]
-            # PERUBAHAN: Menggunakan Enum Bahasa Indonesia
-            total_patients_waiting += len([q for q in queues_today_for_doctor if q.status == schemas.QueueStatus.menunggu])
-            total_patients_serving += len([q for q in queues_today_for_doctor if q.status == schemas.QueueStatus.sedang_dilayani])
-            total_patients_today += len(queues_today_for_doctor)
-            total_max_patients += doctor.max_patients
+    services = db.query(storage.Service).all()
+    
+    for s in services:
+        doctors = s.doctors # Access via relationship
+        waiting = 0
+        serving = 0
+        total_today = 0
+        max_p = 0
         
-        active_patients = total_patients_waiting + total_patients_serving
-        density_percentage = (active_patients / total_max_patients * 100) if total_max_patients > 0 else 0
+        for d in doctors:
+            max_p += d.max_patients
+            q_today = db.query(storage.Queue).filter(
+                storage.Queue.doctor_id == d.id,
+                func.date(storage.Queue.registration_time) == today
+            ).all()
+            
+            waiting += sum(1 for q in q_today if q.status == "menunggu")
+            serving += sum(1 for q in q_today if q.status == "sedang dilayani")
+            total_today += len(q_today)
+            
+        active = waiting + serving
+        density = (active / max_p * 100) if max_p > 0 else 0
         
-        status_entry = schemas.ClinicStatus(
-            service_id=service.id,
-            service_name=service.name,
-            doctors_count=len(doctors_in_service),
-            max_patients_total=total_max_patients,
-            patients_waiting=total_patients_waiting,
-            patients_serving=total_patients_serving,
-            total_patients_today=total_patients_today,
-            density_percentage=round(density_percentage, 2)
-        )
-        dashboard_data.append(status_entry)
-    return dashboard_data
-
-# =================================================================
-# BAGIAN 6: MENGGABUNGKAN SEMUA ROUTER KE APLIKASI UTAMA
-# =================================================================
+        data.append(schemas.ClinicStatus(
+            service_id=s.id,
+            service_name=s.name,
+            doctors_count=len(doctors),
+            max_patients_total=max_p,
+            patients_waiting=waiting,
+            patients_serving=serving,
+            total_patients_today=total_today,
+            density_percentage=round(density, 2)
+        ))
+    return data
 
 app.include_router(router_public)
 app.include_router(router_admin_services)
 app.include_router(router_admin_doctors)
 app.include_router(router_monitoring)
-

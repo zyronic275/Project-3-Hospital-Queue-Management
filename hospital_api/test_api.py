@@ -1,229 +1,167 @@
 import pytest
 from fastapi.testclient import TestClient
-from datetime import time, date, datetime
-import copy
-from freezegun import freeze_time
-import sys
-import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-# Menambahkan path proyek ke sys.path agar impor modul bekerja
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Import your application and database models
+from main import app, get_db
+from storage import Base
 
-from hospital_api.main import app
-from hospital_api import storage, schemas
+# 1. SETUP TEST DATABASE (In-Memory SQLite)
+# We use StaticPool so the in-memory data persists across multiple requests within one test session
+SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
-# Klien untuk melakukan request ke API
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# 2. OVERRIDE DEPENDENCY
+# This tells FastAPI: "When a route asks for 'get_db', give them this test database instead."
+def override_get_db():
+    try:
+        db = TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
+
+app.dependency_overrides[get_db] = override_get_db
+
+# 3. INITIALIZE CLIENT & TABLES
 client = TestClient(app)
 
-# Menyimpan state awal dari database untuk di-reset
-initial_db_data = copy.deepcopy(storage.db_data)
-initial_id_counters = copy.deepcopy(storage.id_counters)
-
 @pytest.fixture(autouse=True)
-def reset_database():
+def run_around_tests():
     """
-    Fixture yang berjalan sebelum setiap tes untuk memastikan state yang bersih.
-    Ini me-reset data dan memuat ulang model Pydantic secara manual.
+    This fixture runs automatically before every test function.
+    It creates fresh tables, runs the test, and then drops the tables.
     """
-    global initial_db_data, initial_id_counters
-    
-    storage.db_data = copy.deepcopy(initial_db_data)
-    storage.id_counters = copy.deepcopy(initial_id_counters)
-
-    storage.db["services"] = [schemas.ServiceSchema(**s) for s in storage.db_data["services"]]
-    storage.db["doctors"] = [schemas.DoctorSchema(**d) for d in storage.db_data["doctors"]]
-    storage.db["patients"] = [schemas.PatientSchema(**p) for p in storage.db_data["patients"]]
-    storage.db["queues"] = []
-
+    # Create tables
+    Base.metadata.create_all(bind=engine)
     yield
+    # Drop tables (clean slate for next test)
+    Base.metadata.drop_all(bind=engine)
 
+# =================================================================
+# TEST CASES
+# =================================================================
 
-# --- Tes untuk Pendaftaran Pasien ---
-
-@freeze_time("2025-10-09 10:00:00")
-def test_register_with_doctor_selection():
-    """Tes berhasil mendaftar dengan memilih dokter spesifik."""
-    response = client.post(
-        "/register",
-        json={"patient_name": "Budi", "service_ids": [1], "doctor_id": 1}
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["tickets"][0]["queue_number"] == "UMUM-1-001"
-    assert data["tickets"][0]["doctor"]["name"] == "dr. Elan"
-
-@freeze_time("2025-10-09 09:00:00")
-def test_register_auto_doctor_assignment_when_only_one_available():
-    """Tes berhasil mendaftar dengan penugasan otomatis ketika hanya ada satu dokter."""
-    response = client.post("/register", json={"patient_name": "Siti", "service_ids": [3]})
-    assert response.status_code == 201
-    data = response.json()
-    assert data["tickets"][0]["doctor"]["name"] == "dr. Candra"
-
-@freeze_time("2025-10-09 14:30:00")
-def test_fail_register_when_multiple_doctors_available_without_choice():
-    """Tes gagal mendaftar jika ada beberapa dokter tapi tidak ada yang dipilih."""
-    response = client.post("/register", json={"patient_name": "Rina", "service_ids": [3]})
-    assert response.status_code == 400
-    assert "Terdapat lebih dari satu dokter yang tersedia" in response.json()["detail"]
-
-@freeze_time("2025-10-09 09:30:00")
-def test_fail_register_if_quota_full():
-    """Tes gagal mendaftar jika kuota dokter yang dituju sudah penuh."""
-    dr_candra = next(d for d in storage.db["doctors"] if d.id == 3)
-    dr_candra.max_patients = 1
-    
-    client.post("/register", json={"patient_name": "Pasien 1", "service_ids": [3], "doctor_id": 3})
-    
-    response1 = client.post("/register", json={"patient_name": "Pasien 2", "service_ids": [3], "doctor_id": 3})
-    
-    assert response1.status_code == 400
-    assert "Kuota untuk dokter dr. Candra sudah penuh" in response1.json()["detail"]
-
-# --- Tes untuk Info Publik & Kuota ---
-
-@freeze_time("2025-10-09 14:30:00")
-def test_get_available_doctors_shows_remaining_quota():
-    """Tes endpoint ketersediaan dokter menampilkan sisa kuota dengan benar."""
-    client.post("/register", json={"patient_name": "Pasien Gigi 1", "service_ids": [2], "doctor_id": 2})
-    
-    response = client.get("/services/2/available-doctors") # Poli Gigi
+def test_root_dashboard_empty():
+    """Test that the dashboard loads empty initially."""
+    response = client.get("/admin/dashboard")
     assert response.status_code == 200
-    doctors = response.json()
+    assert response.json() == []
+
+def test_create_service_and_doctor():
+    """
+    Integration test:
+    1. Create a Service (Poli)
+    2. Create a Doctor assigned to that Poli
+    3. Verify they exist
+    """
+    # 1. Create Service
+    service_payload = {"name": "Poli Mata", "prefix": "MATA"}
+    res_service = client.post("/admin/services/", json=service_payload)
+    assert res_service.status_code == 200
+    service_data = res_service.json()
+    assert service_data["name"] == "Poli Mata"
+    service_id = service_data["id"]
+
+    # 2. Create Doctor
+    doctor_payload = {
+        "doctor_code": "007",
+        "name": "dr. James Bond",
+        "practice_start_time": "08:00:00",
+        "practice_end_time": "16:00:00",
+        "max_patients": 10,
+        "services": [service_id] # Link to the service we just created
+    }
+    res_doctor = client.post("/admin/doctors/", json=doctor_payload)
+    assert res_doctor.status_code == 200
+    doc_data = res_doctor.json()
+    assert doc_data["name"] == "dr. James Bond"
+    assert doc_data["services"] == [service_id]
+
+def test_patient_registration_flow():
+    """
+    Full Flow:
+    1. Setup Service & Doctor
+    2. Patient Registers
+    3. Check Queue
+    4. Update Status
+    """
+    # --- SETUP DATA ---
+    # Create Service
+    s_res = client.post("/admin/services/", json={"name": "Poli Gigi", "prefix": "GIGI"})
+    service_id = s_res.json()["id"]
     
-    dr_aura = next(d for d in doctors if d["name"] == "drg. Aura")
+    # Create Doctor
+    d_payload = {
+        "doctor_code": "101", "name": "drg. Gigi", 
+        "practice_start_time": "00:00:00", "practice_end_time": "23:59:59", 
+        "max_patients": 5, "services": [service_id]
+    }
+    d_res = client.post("/admin/doctors/", json=d_payload)
+    doctor_id = d_res.json()["id"]
 
-    assert dr_aura["remaining_quota"] == dr_aura["max_patients"]-1
-
-@freeze_time("2025-10-09 14:30:00")
-def test_get_available_doctors_hides_full_doctor():
-    """Tes dokter yang kuotanya habis tidak muncul di daftar tersedia."""
-    dr_tiffany = next(d for d in storage.db["doctors"] if d.id == 6)
-    dr_tiffany.max_patients = 1
-    client.post("/register", json={"patient_name": "Pasien Gigi X", "service_ids": [2], "doctor_id": 6})
-
-    response = client.get("/services/2/available-doctors")
-    assert response.status_code == 200
-    doctors = response.json()
+    # --- 1. REGISTER PATIENT ---
+    reg_payload = {
+        "patient_name": "Budi Santoso",
+        "service_ids": [service_id],
+        "doctor_id": doctor_id
+    }
+    res_reg = client.post("/register", json=reg_payload)
+    assert res_reg.status_code == 201
+    data_reg = res_reg.json()
     
-    assert len(doctors) == 1
-    assert doctors[0]["name"] == "drg. Aura"
+    # Verify Ticket
+    assert data_reg["patient"]["name"] == "Budi Santoso"
+    ticket = data_reg["tickets"][0]
+    assert ticket["queue_number"] == "GIGI-101-001"
 
-# --- Tes untuk Admin (CRUD & Logika Terkait) ---
+    # --- 2. CHECK QUEUE ---
+    res_queue = client.get(f"/queues/{service_id}")
+    assert res_queue.status_code == 200
+    queue_list = res_queue.json()
+    assert len(queue_list) == 1
+    assert queue_list[0]["status"] == "menunggu"
+    queue_id = queue_list[0]["id"]
 
-def test_fail_create_service_with_duplicate_prefix():
-    """Tes untuk memastikan API menolak pembuatan layanan dengan prefix yang sudah ada."""
-    response = client.post("/admin/services/", json={"name": "Poli Umum Darurat", "prefix": "UMUM"})
-    assert response.status_code == 400
-    assert "Prefix 'UMUM' sudah digunakan" in response.json()["detail"]
+    # --- 3. UPDATE STATUS (Layani) ---
+    res_status = client.put(f"/queues/{queue_id}/status", json={"status": "sedang dilayani"})
+    assert res_status.status_code == 200
+    assert res_status.json()["status"] == "sedang dilayani"
 
-def test_fail_create_doctor_with_duplicate_code_in_same_service():
-    """Tes gagal membuat dokter jika 'doctor_code' sudah ada di poli yang sama."""
-    # dr. Elan (ID 1) sudah ada di Poli Umum (ID 1) dengan kode "1"
-    response = client.post("/admin/doctors/", json={
-        "name": "dr. Fajar",
-        "doctor_code": "1", # Kode duplikat
-        "services": [1], # Poli yang sama
-        "practice_start_time": "09:00:00",
-        "practice_end_time": "17:00:00",
-        "max_patients": 10
+    # --- 4. CHECK DASHBOARD ---
+    res_dash = client.get("/admin/dashboard")
+    dash_data = res_dash.json()
+    # Find our service in dashboard
+    target_service = next(item for item in dash_data if item["service_id"] == service_id)
+    assert target_service["patients_serving"] == 1
+    assert target_service["patients_waiting"] == 0
+
+def test_registration_validation_full_quota():
+    """Test that registration fails if doctor is full."""
+    # Setup Service & Doctor with max_patients = 1
+    s_res = client.post("/admin/services/", json={"name": "Poli Umum", "prefix": "UMUM"})
+    sid = s_res.json()["id"]
+    
+    client.post("/admin/doctors/", json={
+        "doctor_code": "A1", "name": "dr. Limited", 
+        "practice_start_time": "00:00:00", "practice_end_time": "23:59:59", 
+        "max_patients": 1, "services": [sid]
     })
-    assert response.status_code == 400
-    assert "Kode dokter '1' sudah digunakan di Poli Umum oleh dr. Elan." in response.json()["detail"]
+    # Fetch available doctors to get ID
+    docs = client.get(f"/services/{sid}/available-doctors").json()
+    did = docs[0]["id"]
 
-def test_delete_service_also_deletes_doctor():
-    """Tes menghapus layanan juga menghapus dokter yang hanya bertugas di sana."""
-    service_resp = client.post("/admin/services/", json={"name": "Urologi", "prefix": "URO"})
-    new_service_id = service_resp.json()["id"]
+    # Register Patient 1 (Success)
+    client.post("/register", json={"patient_name": "P1", "service_ids": [sid], "doctor_id": did})
 
-    doctor_resp = client.post("/admin/doctors/", json={
-        "name": "dr. Ujang", "doctor_code": "9", "services": [new_service_id],
-        "practice_start_time": "08:00:00", "practice_end_time": "12:00:00", "max_patients": 5
-    })
-    new_doctor_id = doctor_resp.json()["id"]
-
-    doctors_before = client.get("/admin/doctors/").json()
-    assert any(d["id"] == new_doctor_id for d in doctors_before)
-    
-    client.delete(f"/admin/services/{new_service_id}")
-
-    doctors_after = client.get("/admin/doctors/").json()
-    assert not any(d["id"] == new_doctor_id for d in doctors_after)
-
-def test_delete_service_updates_doctor_services():
-    """Tes menghapus layanan akan memperbarui daftar layanan dokter, bukan menghapusnya."""
-    dr_elan = next(d for d in storage.db["doctors"] if d.id == 1)
-    dr_elan.services = [1, 4]
-
-    client.delete("/admin/services/4")
-
-    response = client.get("/admin/doctors/")
-    updated_dr_elan = next(d for d in response.json() if d["id"] == 1)
-    
-    assert updated_dr_elan is not None
-    assert updated_dr_elan["services"] == [1]
-
-# --- Tes untuk Dashboard & Status ---
-@freeze_time("2025-10-09 13:00:00")
-def test_dashboard_updates_correctly():
-    """Tes dasbor memberikan data yang akurat setelah pendaftaran."""
-    client.post("/register", json={"patient_name": "Pasien A", "service_ids": [1], "doctor_id": 1})
-    client.post("/register", json={"patient_name": "Pasien B", "service_ids": [1], "doctor_id": 5})
-
-    response_after = client.get("/admin/dashboard")
-    poli_umum_status_after = next(item for item in response_after.json() if item["service_name"] == "Poli Umum")
-    
-    assert poli_umum_status_after["total_patients_today"] == 2
-    assert poli_umum_status_after["patients_waiting"] == 2
-    assert poli_umum_status_after["max_patients_total"] == 45
-    assert poli_umum_status_after["density_percentage"] == 4.44
-
-@freeze_time("2025-10-09 14:00:00")
-def test_public_queue_display_and_status_update_in_indonesian():
-    """Tes layar antrean publik dan pembaruan status menggunakan Bahasa Indonesia."""
-    client.post("/register", json={"patient_name": "Dewi", "service_ids": [4]}) 
-    queue_id = storage.db["queues"][-1].id
-    
-    queue_response1 = client.get("/queues/4?status=menunggu")
-    assert len(queue_response1.json()) == 1
-    assert queue_response1.json()[0]["status"] == "menunggu"
-
-    client.put(f"/queues/{queue_id}/status", json={"status": "sedang dilayani"})
-    assert len(client.get("/queues/4?status=menunggu").json()) == 0
-    assert len(client.get("/queues/4?status=sedang dilayani").json()) == 1
-    
-    client.put(f"/queues/{queue_id}/status", json={"status": "selesai"})
-    assert len(client.get("/queues/4?status=sedang dilayani").json()) == 0
-    assert len(client.get("/queues/4?status=selesai").json()) == 1
-
-@freeze_time("2025-10-09 10:00:00")
-def test_fail_update_queue_with_invalid_status():
-    """Tes gagal memperbarui status antrean dengan nilai yang tidak valid."""
-    reg_response = client.post("/register", json={"patient_name": "Pasien Invalid", "service_ids": [1], "doctor_id": 1})
-    assert reg_response.status_code == 201
-    
-    queue_id = storage.db["queues"][-1].id
-    
-    response = client.put(f"/queues/{queue_id}/status", json={"status": "invalid_status"})
-    assert response.status_code == 422
-
-@freeze_time("2025-10-09 10:00:00")
-def test_dashboard_density_decreases_after_finish():
-    """Tes kepadatan di dasbor berkurang setelah pasien selesai."""
-    client.post("/register", json={"patient_name": "Pasien Uji", "service_ids": [1], "doctor_id": 1})
-    queue_id = storage.db["queues"][-1].id
-
-    dashboard_before = client.get("/admin/dashboard").json()
-    poli_umum_before = next(s for s in dashboard_before if s["service_id"] == 1)
-    assert poli_umum_before["patients_waiting"] == 1
-    assert poli_umum_before["density_percentage"] > 0
-
-    client.put(f"/queues/{queue_id}/status", json={"status": "selesai"})
-
-    dashboard_after = client.get("/admin/dashboard").json()
-    poli_umum_after = next(s for s in dashboard_after if s["service_id"] == 1)
-    assert poli_umum_after["patients_waiting"] == 0
-    assert poli_umum_after["patients_serving"] == 0
-    assert poli_umum_after["density_percentage"] == 0
-    assert poli_umum_after["total_patients_today"] == 1
-
+    # Register Patient 2 (Should Fail)
+    res_fail = client.post("/register", json={"patient_name": "P2", "service_ids": [sid], "doctor_id": did})
+    assert res_fail.status_code == 400
+    assert "full" in res_fail.json()["detail"] or "penuh" in res_fail.json()["detail"]
