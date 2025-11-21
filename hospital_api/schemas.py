@@ -1,16 +1,14 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, time, date
-from typing import List, Optional
+from typing import List, Optional, Any
 from enum import Enum
 
-# --- PERUBAHAN 1: Enum Status dalam Bahasa Indonesia ---
-# Validasi sekarang akan memaksa penggunaan salah satu dari nilai ini.
 class QueueStatus(str, Enum):
     menunggu = "menunggu"
     sedang_dilayani = "sedang dilayani"
     selesai = "selesai"
 
-# --- Skema Dasar ---
+# --- Base Schemas ---
 
 class ServiceBase(BaseModel):
     name: str
@@ -22,24 +20,23 @@ class DoctorBase(BaseModel):
     practice_start_time: time
     practice_end_time: time
     max_patients: int
-    services: List[int]
+    services: List[int] 
 
 class PatientBase(BaseModel):
     name: str
+    # NEW: Date of Birth
+    date_of_birth: Optional[date] = None
 
 class QueueBase(BaseModel):
-    # Menggunakan Enum Bahasa Indonesia dengan nilai default 'menunggu'
     status: QueueStatus = QueueStatus.menunggu
 
-# --- Skema untuk Membuat Data (Create) ---
+# --- Create/Update Schemas ---
 
 class ServiceCreate(ServiceBase):
     pass
 
 class DoctorCreate(DoctorBase):
     pass
-
-# --- Skema untuk Memperbarui Data (Update) ---
 
 class ServiceUpdate(BaseModel):
     name: Optional[str] = None
@@ -54,10 +51,9 @@ class DoctorUpdate(BaseModel):
     services: Optional[List[int]] = None
 
 class QueueStatusUpdate(BaseModel):
-    # Menggunakan Enum Bahasa Indonesia untuk validasi input
     status: QueueStatus
 
-# --- Skema Respons API (Model Lengkap dengan ID) ---
+# --- Response Schemas ---
 
 class ServiceSchema(ServiceBase):
     id: int
@@ -69,8 +65,16 @@ class DoctorSchema(DoctorBase):
     class Config:
         from_attributes = True
 
+    @field_validator('services', mode='before')
+    def parse_services(cls, v: Any):
+        if v and isinstance(v, list) and hasattr(v[0], 'id'):
+            return [item.id for item in v]
+        return v
+
 class PatientSchema(PatientBase):
     id: int
+    age: Optional[int] = None
+    gender: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -78,34 +82,33 @@ class QueueSchema(QueueBase):
     id: int
     queue_id_display: str
     queue_number: int
-    registration_time: datetime = Field(default_factory=datetime.now)
+    registration_time: datetime
     patient_id: int
     service_id: int
     doctor_id: int
     class Config:
         from_attributes = True
 
-# --- Skema untuk Registrasi & Tiket ---
-
-class RegistrationRequest(BaseModel):
-    patient_name: str
-    service_ids: List[int]
-    doctor_id: Optional[int] = None
+# --- Registration & Ticket ---
 
 class Ticket(BaseModel):
     service: ServiceSchema
     queue_number: str
     doctor: DoctorSchema
 
+class RegistrationRequest(BaseModel):
+    patient_name: str
+    # NEW: Optional Date of Birth during registration
+    date_of_birth: Optional[date] = None
+    service_ids: List[int]
+    doctor_id: Optional[int] = None
+
 class RegistrationResponse(BaseModel):
     patient: PatientSchema
     tickets: List[Ticket]
 
-# --- Skema Baru untuk Ketersediaan Dokter ---
 class DoctorAvailableSchema(DoctorSchema):
     remaining_quota: int
-
-# --- Skema untuk Monitoring ---
 
 class ClinicStatus(BaseModel):
     service_id: int
@@ -116,4 +119,3 @@ class ClinicStatus(BaseModel):
     patients_serving: int
     total_patients_today: int
     density_percentage: float
-
