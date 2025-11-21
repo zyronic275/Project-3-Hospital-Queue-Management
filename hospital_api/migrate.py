@@ -3,32 +3,39 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import os
 
-# Import from our storage module
+# Import from storage (NOT schemas)
 from storage import init_db, SessionLocal, Service, Doctor, Patient, Queue
 
 def get_prefix(poli_name):
     """Smart prefix generator for names like 'Poli Umum' -> 'UMUM'"""
     name_upper = poli_name.upper()
     if "POLI" in name_upper:
-        # Split "Poli Umum" -> ["Poli", "Umum"] -> take "Umum"
         parts = name_upper.split()
         if len(parts) > 1:
             return parts[1][:4]
-    # Fallback for "Jantung" or others
     return name_upper[:4]
 
 def run_migration():
-    # Remove old DB if exists to start fresh
-    if os.path.exists("hospital.db"):
-        os.remove("hospital.db")
+    # Ensure we are looking at the DB in the same folder
+    db_path = os.path.join(os.path.dirname(__file__), "hospital.db")
+    
+    # Optional: Remove old DB to start fresh
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print("Removed old database.")
         
     print("Initializing Database...")
     init_db()
     db = SessionLocal()
     
     print("Reading CSV...")
-    # Update filename to the new dataset
-    df = pd.read_csv("healthcare_dataset_altered.csv")
+    # Make sure the CSV is in the same folder as this script
+    csv_path = os.path.join(os.path.dirname(__file__), "healthcare_dataset_altered.csv")
+    if not os.path.exists(csv_path):
+        print(f"ERROR: CSV file not found at {csv_path}")
+        return
+
+    df = pd.read_csv(csv_path)
 
     # --- 1. Import Services (Poli) ---
     print("Importing Services...")
@@ -67,14 +74,15 @@ def run_migration():
 
     # --- 3. Import Patients ---
     print("Importing Patients...")
-    # Drop duplicates by Name to avoid double entry
     unique_patients = df[['Name', 'Age', 'Gender', 'Date of Birth']].drop_duplicates(subset=['Name'])
     patient_map = {}
     
     for _, row in unique_patients.iterrows():
-        # Parse Date of Birth (YYYY-MM-DD)
-        dob = datetime.strptime(row['Date of Birth'], "%Y-%m-%d").date()
-        
+        try:
+            dob = datetime.strptime(row['Date of Birth'], "%Y-%m-%d").date()
+        except ValueError:
+            dob = None # Handle invalid dates if any
+
         p = Patient(
             name=row['Name'], 
             age=row['Age'], 
@@ -95,19 +103,15 @@ def run_migration():
         doctor = doctor_map[row['Doctor']]
         patient = patient_map[row['Name']]
         
-        # Parse Visit Date + Arrival Time
-        visit_date_str = row['Visit Date'] # YYYY-MM-DD
-        arrival_time_str = row['Arrival Time'] # HH:MM:SS
+        visit_date_str = row['Visit Date']
+        arrival_time_str = row['Arrival Time']
         
         reg_time = datetime.strptime(f"{visit_date_str} {arrival_time_str}", "%Y-%m-%d %H:%M:%S")
-        
-        # Determine Queue Number (Simple increment per doctor per day would be ideal, 
-        # but for migration we can just use row index or simple 1-based)
         
         q = Queue(
             queue_id_display=f"{service.prefix}-{doctor.doctor_code}-{i+1:04d}",
             queue_number=i+1,
-            status="selesai", # Assume historical data is done
+            status="selesai",
             registration_time=reg_time,
             patient_id=patient.id,
             service_id=service.id,
@@ -122,7 +126,7 @@ def run_migration():
 
     db.add_all(queues_to_add)
     db.commit()
-    print("Migration Complete! 'hospital.db' created with new dataset.")
+    print("Migration Complete!")
     db.close()
 
 if __name__ == "__main__":

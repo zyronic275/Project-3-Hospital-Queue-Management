@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import datetime, time, date
 from typing import List, Optional, Any
 from enum import Enum
@@ -24,32 +24,7 @@ class DoctorBase(BaseModel):
 
 class PatientBase(BaseModel):
     name: str
-    age: int
-    gender: str
-    blood_type: str
-    medical_condition: str
-    date_of_admission: str
-    doctor: str
-    hospital: str
-    insurance_provider: str
-    billing_amount: float
-    room_number: int
-    admission_type: str
-    discharge_date: str
-    medication: str
-    test_results: str
-    # Fixed: Added missing priority field from CSV
-    priority: str = "Normal"
-
-class PatientCreate(PatientBase):
-    pass
-
-class Patient(PatientBase):
-    # Fixed: Added ID so we can safely find patients
-    id: int 
-
-    class Config:
-        from_attributes = True
+    date_of_birth: Optional[date] = None
 
 class QueueBase(BaseModel):
     status: QueueStatus = QueueStatus.menunggu
@@ -77,19 +52,19 @@ class DoctorUpdate(BaseModel):
 class QueueStatusUpdate(BaseModel):
     status: QueueStatus
 
-# --- Response Schemas ---
+# --- Response Schemas (UPDATED FOR PYDANTIC V2) ---
 
 class ServiceSchema(ServiceBase):
     id: int
-    class Config:
-        from_attributes = True
+    # NEW SYNTAX: ConfigDict
+    model_config = ConfigDict(from_attributes=True)
 
 class DoctorSchema(DoctorBase):
     id: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @field_validator('services', mode='before')
+    @classmethod
     def parse_services(cls, v: Any):
         if v and isinstance(v, list) and hasattr(v[0], 'id'):
             return [item.id for item in v]
@@ -99,8 +74,7 @@ class PatientSchema(PatientBase):
     id: int
     age: Optional[int] = None
     gender: Optional[str] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class QueueSchema(QueueBase):
     id: int
@@ -110,8 +84,7 @@ class QueueSchema(QueueBase):
     patient_id: int
     service_id: int
     doctor_id: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # --- Registration & Ticket ---
 
@@ -122,7 +95,6 @@ class Ticket(BaseModel):
 
 class RegistrationRequest(BaseModel):
     patient_name: str
-    # NEW: Optional Date of Birth during registration
     date_of_birth: Optional[date] = None
     service_ids: List[int]
     doctor_id: Optional[int] = None
