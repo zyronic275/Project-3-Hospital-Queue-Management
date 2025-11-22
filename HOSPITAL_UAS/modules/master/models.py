@@ -10,4 +10,4 @@ clinic_code = Column(String(50), nullable=False)
 is_acƟve = Column(Boolean, default=True)
 
 # Relasi ke module queue
-visits = relaƟonship("modules.queue.models.Visit", back_populates="doctor")
+visits = relationship("modules.queue.models.Visit", back_populates="doctor")

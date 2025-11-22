@@ -14,4 +14,4 @@ app = FastAPI(title="Hospital Queue System (UAS)")
 
 @app.get("/")
 def root():
-    return {"message": "System Online 띙띚띞띟띛띜띝", "db": "MySQL Connected"}
+return {"message": "System Online 띙띚띞띟띛띜띝", "db": "MySQL Connected"}

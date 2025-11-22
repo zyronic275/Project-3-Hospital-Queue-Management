@@ -1,102 +1,139 @@
 import pandas as pd
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine
-# Import Model English
-from modules.antrean.models import Base, PaƟentModel, DoctorModel, VisitModel
-from dateƟme import dateƟme
+from database import SessionLocal, engine, Base
+from datetime import datetime
+import os
+import sys
 
-# Buat tabel jika belum ada
+# Tambahkan path ke root folder aplikasi agar modul bisa diimpor
+# Ini adalah praktik umum untuk seeder/script di luar lingkup FastAPI utama
+# jika Anda menjalankan script langsung.
+# Namun, dalam lingkungan standar, ini mungkin tidak diperlukan jika Anda
+# menjalankan script dari root folder. Kita tetap tambahkan untuk robustness.
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+
+# PERBAIKAN: Import Model dengan Path dan Nama Kelas yang Benar
+# Nama kelas yang benar adalah Doctor, Patient, dan Visit (bukan Model/Model)
+from modules.master.models import Doctor
+from modules.queue.models import Patient, Visit, VisitStatus
+from modules.auth.models import User, RoleEnum # Diperlukan jika ingin menambahkan user default
+
+# Buat tabel jika belum ada (Opsional, tapi bagus untuk memastikan)
 Base.metadata.create_all(bind=engine)
 
 def seed_data():
-db = SessionLocal()
+    db = SessionLocal()
+   
+    # Pastikan file CSV sudah ada
+    csv_filename = 'data_final_hospital.csv'
+   
+    try:
+        df = pd.read_csv(csv_filename)
+        print(f"🚀 Reading file {csv_filename}...")
+    except FileNotFoundError:
+        print(f"❌ Error: File '{csv_filename}' not found.")
+        db.close()
+        return
+   
+    count_success = 0
+   
+    # --- Opsional: Buat User Admin Default jika belum ada ---
+    try:
+        if not db.query(User).filter(User.username == "admin").first():
+            from security import get_password_hash # Asumsi ada file security.py untuk hashing
+            # Karena file security.py tidak disertakan, kita akan skip hashing
+            # dan hanya menggunakan password placeholder (TOLONG GANTI INI DENGAN LOGIC HASH SEBENARNYA)
+           
+            # import bcrypt # Contoh jika menggunakan bcrypt
+            # hashed_password = bcrypt.hashpw("password123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-# GANTI DENGAN NAMA FILE CSV KAMU YANG SUDAH BAHASA INGGRIS
-csv_filename = 'data_final_hospital.csv'
+            # Kita gunakan placeholder string
+            hashed_password_placeholder = "$2b$12$fK3M1kP9mQ9pQ9rQ9sQ9tO.E.O/w.w"
+           
+            admin_user = User(
+                username="admin",
+                hashed_password=hashed_password_placeholder,
+                role=RoleEnum.ADMIN,
+                full_name="Administrator System"
+            )
+            db.add(admin_user)
+            db.commit()
+            print("✅ Default ADMIN user created.")
+    except Exception as e:
+         print(f"⚠️ Could not create default admin user (Database error or missing security.py): {e}")
+         db.rollback()
+    # -----------------------------------------------------
 
-try:
-df = pd.read_csv(csv_filename)
-print(f"띙띚띞띟띛띜띝 Reading file {csv_filename}...")
-except FileNotFoundError:
-print(f" Error: File '{csv_filename}' not found.")
-return
+    for index, row in df.iterrows():
+        try:
+            # --- 1. DOCTOR ---
+            # Menggunakan class Doctor yang benar
+            doctor = db.query(Doctor).filter(Doctor.doctor_name == row['doctor_name']).first()
+            if not doctor:
+                doctor = Doctor(
+                    doctor_name=row['doctor_name'],
+                    clinic_code=row['clinic_code']
+                )
+                db.add(doctor)
+                db.commit()
+                db.refresh(doctor)
+           
+            # --- 2. PATIENT ---
+            # Menggunakan class Patient yang benar
+            patient = db.query(Patient).filter(Patient.patient_name == row['patient_name']).first()
+            if not patient:
+                gender_input = row['gender']
+                if gender_input in ['Male', 'L', 'M', 'Laki-laki']:
+                    gender_db = "Male"
+                elif gender_input in ['Female', 'P', 'Perempuan']:
+                    gender_db = "Female"
+                else:
+                    gender_db = "Unknown"
+               
+                email_dummy = row['patient_name'].replace(" ", ".").lower().replace("'", "") + "@example.com"
+               
+                patient = Patient(
+                    patient_name=row['patient_name'],
+                    email=email_dummy,
+                    # Pastikan format tanggal sesuai: '%Y-%m-%d'
+                    date_of_birth=datetime.strptime(str(row['date_of_birth']), '%Y-%m-%d'),
+                    gender=gender_db,
+                    age=int(row['age']),
+                    insurance=row['insurance']
+                )
+                db.add(patient)
+                db.commit()
+                db.refresh(patient)
 
-count_success = 0
+            # --- 3. VISIT ---
+            visit_date = str(row['visit_date']).split(" ")[0] # Ambil hanya tanggal jika ada timestamp
+            fmt = "%Y-%m-%d %H:%M:%S"
+           
+            # Menggunakan class Visit yang benar. Status default di DB adalah REGISTERED,
+            # tapi karena ini data historis, kita set ke COMPLETED.
+            visit = Visit(
+                patient_id=patient.id,
+                doctor_id=doctor.id,
+                registration_time = datetime.strptime(f"{visit_date} {row['registration_time']}", fmt),
+                checkin_time      = datetime.strptime(f"{visit_date} {row['checkin_time']}", fmt),
+                triage_time       = datetime.strptime(f"{visit_date} {row['triage_time']}", fmt),
+                clinic_entry_time = datetime.strptime(f"{visit_date} {row['clinic_entry_time']}", fmt),
+                doctor_call_time  = datetime.strptime(f"{visit_date} {row['doctor_call_time']}", fmt),
+                completion_time   = datetime.strptime(f"{visit_date} {row['completion_time']}", fmt),
+                status=VisitStatus.COMPLETED
+            )
+            db.add(visit)
+            count_success += 1
+           
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Error at row {index} (Data: {row.get('patient_name', 'N/A')}): {e}")
+            continue
 
-for index, row in df.iterrows():
-try:
-# --- 1. DOCTOR ---
-# Header CSV English: doctor_name, clinic_code
-doctor = db.query(DoctorModel).filter(DoctorModel.doctor_name ==
-row['doctor_name']).first()
-if not doctor:
-doctor = DoctorModel(
-doctor_name=row['doctor_name'],
-clinic_code=row['clinic_code']
-)
-db.add(doctor)
-db.commit()
-db.refresh(doctor)
-
-# --- 2. PATIENT ---
-# Header CSV English: paƟent_name, gender, date_of_birth, age, insurance
-paƟent = db.query(PaƟentModel).filter(PaƟentModel.paƟent_name ==
-row['paƟent_name']).first()
-if not paƟent:
-
-# Gender logic: Asumsi di CSV isinya 'Male'/'Female'
-gender_input = row['gender']
-# Mapping jika inputnya variaƟf
-if gender_input in ['Male', 'L', 'M']:
-gender_db = "Male"
-else:
-gender_db = "Female"
-
-email_dummy = row['paƟent_name'].replace(" ", ".").lower() + "@example.com"
-
-paƟent = PaƟentModel(
-paƟent_name=row['paƟent_name'],
-email=email_dummy,
-date_of_birth=dateƟme.strpƟme(row['date_of_birth'], '%Y-%m-%d'),
-gender=gender_db,
-age=row['age'],
-insurance=row['insurance']
-)
-db.add(paƟent)
-db.commit()
-db.refresh(paƟent)
-
-# --- 3. VISIT ---
-# Header CSV English: visit_date, registraƟon_Ɵme, etc.
-visit_date = row['visit_date']
-fmt = "%Y-%m-%d %H:%M:%S"
-
-visit = VisitModel(
-paƟent_id=paƟent.id,
-doctor_id=doctor.id,
-registraƟon_Ɵme = dateƟme.strpƟme(f"{visit_date} {row['registraƟon_Ɵme']}", fmt),
-
-checkin_Ɵme = dateƟme.strpƟme(f"{visit_date} {row['checkin_Ɵme']}", fmt),
-triage_Ɵme = dateƟme.strpƟme(f"{visit_date} {row['triage_Ɵme']}", fmt),
-clinic_entry_Ɵme = dateƟme.strpƟme(f"{visit_date} {row['clinic_entry_Ɵme']}", fmt),
-doctor_call_Ɵme = dateƟme.strpƟme(f"{visit_date} {row['doctor_call_Ɵme']}", fmt),
-compleƟon_Ɵme = dateƟme.strpƟme(f"{visit_date} {row['compleƟon_Ɵme']}", fmt),
-status="COMPLETED"
-)
-db.add(visit)
-count_success += 1
-
-except ExcepƟon as e:
-print(f" Error at row {index}: {e}")
-conƟnue
-
-db.commit()
-db.close()
-print(f"膆 Success! {count_success} rows imported to MySQL.")
+    db.commit()
+    db.close()
+    print(f"✅ Success! {count_success} rows imported to MySQL.")
 
 if __name__ == "__main__":
-seed_data()
-
-Jalankan di terminal:
-Bash
-python seed_database.py
+    seed_data()
