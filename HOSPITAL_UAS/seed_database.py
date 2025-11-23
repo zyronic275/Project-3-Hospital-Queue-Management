@@ -1,139 +1,121 @@
 import pandas as pd
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine, Base
-from datetime import datetime
+from database import engine, SessionLocal, Base # Mengimpor komponen DB
+from modules.master import models as master_models
+from modules.auth import models as auth_models
 import os
-import sys
 
-# Tambahkan path ke root folder aplikasi agar modul bisa diimpor
-# Ini adalah praktik umum untuk seeder/script di luar lingkup FastAPI utama
-# jika Anda menjalankan script langsung.
-# Namun, dalam lingkungan standar, ini mungkin tidak diperlukan jika Anda
-# menjalankan script dari root folder. Kita tetap tambahkan untuk robustness.
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Nama file CSV yang akan digunakan sebagai sumber data
+CSV_FILE = &#39;data_final_hospital.csv&#39;
+# Nama user Admin default
+DEFAULT_ADMIN_USERNAME = os.environ.get(&quot;ADMIN_USER&quot;, &quot;admin_rs&quot;)
+DEFAULT_ADMIN_PASSWORD = os.environ.get(&quot;ADMIN_PASS&quot;, &quot;password123&quot;)
 
+# Import utilitas password (asumsi passlib diinstal)
 
-# PERBAIKAN: Import Model dengan Path dan Nama Kelas yang Benar
-# Nama kelas yang benar adalah Doctor, Patient, dan Visit (bukan Model/Model)
-from modules.master.models import Doctor
-from modules.queue.models import Patient, Visit, VisitStatus
-from modules.auth.models import User, RoleEnum # Diperlukan jika ingin menambahkan user default
+try:
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
+except ImportError:
+print(&quot;Warning: passlib not installed. Cannot hash default admin password.&quot;)
+pwd_context = None
 
-# Buat tabel jika belum ada (Opsional, tapi bagus untuk memastikan)
+def create_default_admin(db: Session):
+&quot;&quot;&quot;Membuat user admin default jika belum ada.&quot;&quot;&quot;
+existing_admin = db.query(auth_models.User).filter(
+auth_models.User.username == DEFAULT_ADMIN_USERNAME
+).first()
+
+if existing_admin is None:
+if pwd_context:
+hashed_password = pwd_context.hash(DEFAULT_ADMIN_PASSWORD)
+else:
+# Jika passlib tidak diinstal, simpan password tanpa hash (TIDAK AMAN!)
+print(&quot;WARNING: Default admin password stored without hashing!&quot;)
+hashed_password = DEFAULT_ADMIN_PASSWORD
+
+admin_user = auth_models.User(
+username=DEFAULT_ADMIN_USERNAME,
+hashed_password=hashed_password,
+role=auth_models.RoleEnum.ADMIN,
+full_name=&quot;Super Admin Hospital&quot;
+)
+db.add(admin_user)
+db.commit()
+print(f&quot;✅ Default Admin user &#39;{DEFAULT_ADMIN_USERNAME}&#39; created.&quot;)
+
+else:
+print(f&quot;☑️ Admin user &#39;{DEFAULT_ADMIN_USERNAME}&#39; already exists.&quot;)
+
+def seed_doctors_from_csv(db: Session):
+&quot;&quot;&quot;Mengisi tabel &#39;doctors&#39; dari file CSV.&quot;&quot;&quot;
+if not os.path.exists(CSV_FILE):
+print(f&quot;❌ Error: File CSV &#39;{CSV_FILE}&#39; not found. Skipping doctor seeding.&quot;)
+return
+
+try:
+df = pd.read_csv(CSV_FILE)
+except Exception as e:
+print(f&quot;❌ Error reading CSV file: {e}. Skipping doctor seeding.&quot;)
+return
+
+# Ambil daftar unik nama dokter dan kode klinik dari CSV
+# ASUMSI: Kolom &#39;Doctor_Name&#39; dan &#39;Clinic_Code&#39; ada di CSV Anda
+# Jika nama kolom berbeda, sesuaikan di bawah ini:
+required_columns = [&#39;Doctor_Name&#39;, &#39;Clinic_Code&#39;]
+
+if not all(col in df.columns for col in required_columns):
+print(f&quot;❌ Error: CSV file must contain columns: {required_columns}. Skipping doctor seeding.&quot;)
+return
+
+# Menghapus duplikasi dan baris kosong
+unique_doctors = df[required_columns].dropna().drop_duplicates()
+
+doctors_to_add = []
+
+for index, row in unique_doctors.iterrows():
+
+doctor_name = str(row[&#39;Doctor_Name&#39;]).strip()
+clinic_code = str(row[&#39;Clinic_Code&#39;]).strip()
+
+# Cek apakah dokter sudah ada di database
+exists = db.query(master_models.Doctor).filter(
+master_models.Doctor.doctor_name == doctor_name,
+master_models.Doctor.clinic_code == clinic_code
+).first()
+
+if not exists:
+doctors_to_add.append(master_models.Doctor(
+doctor_name=doctor_name,
+clinic_code=clinic_code,
+is_active=True
+))
+
+if doctors_to_add:
+db.add_all(doctors_to_add)
+db.commit()
+print(f&quot;✅ Successfully seeded {len(doctors_to_add)} new doctors into the database.&quot;)
+else:
+print(&quot;☑️ Doctor table already populated. No new doctors added.&quot;)
+
+def main():
+&quot;&quot;&quot;Fungsi utama untuk menjalankan proses seeding.&quot;&quot;&quot;
+# Pastikan semua tabel sudah dibuat (biasanya dilakukan di main.py, tapi diulang di sini untuk
+keamanan)
+print(&quot;Initializing database tables...&quot;)
 Base.metadata.create_all(bind=engine)
 
-def seed_data():
-    db = SessionLocal()
-   
-    # Pastikan file CSV sudah ada
-    csv_filename = 'data_final_hospital.csv'
-   
-    try:
-        df = pd.read_csv(csv_filename)
-        print(f"🚀 Reading file {csv_filename}...")
-    except FileNotFoundError:
-        print(f"❌ Error: File '{csv_filename}' not found.")
-        db.close()
-        return
-   
-    count_success = 0
-   
-    # --- Opsional: Buat User Admin Default jika belum ada ---
-    try:
-        if not db.query(User).filter(User.username == "admin").first():
-            from security import get_password_hash # Asumsi ada file security.py untuk hashing
-            # Karena file security.py tidak disertakan, kita akan skip hashing
-            # dan hanya menggunakan password placeholder (TOLONG GANTI INI DENGAN LOGIC HASH SEBENARNYA)
-           
-            # import bcrypt # Contoh jika menggunakan bcrypt
-            # hashed_password = bcrypt.hashpw("password123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+db = SessionLocal()
+try:
+print(&quot;--- Starting Database Seeding ---&quot;)
+create_default_admin(db)
+seed_doctors_from_csv(db)
+print(&quot;--- Database Seeding Complete ---&quot;)
+except Exception as e:
+db.rollback()
+print(f&quot;❌ An error occurred during seeding: {e}&quot;)
+finally:
+db.close()
 
-            # Kita gunakan placeholder string
-            hashed_password_placeholder = "$2b$12$fK3M1kP9mQ9pQ9rQ9sQ9tO.E.O/w.w"
-           
-            admin_user = User(
-                username="admin",
-                hashed_password=hashed_password_placeholder,
-                role=RoleEnum.ADMIN,
-                full_name="Administrator System"
-            )
-            db.add(admin_user)
-            db.commit()
-            print("✅ Default ADMIN user created.")
-    except Exception as e:
-         print(f"⚠️ Could not create default admin user (Database error or missing security.py): {e}")
-         db.rollback()
-    # -----------------------------------------------------
-
-    for index, row in df.iterrows():
-        try:
-            # --- 1. DOCTOR ---
-            # Menggunakan class Doctor yang benar
-            doctor = db.query(Doctor).filter(Doctor.doctor_name == row['doctor_name']).first()
-            if not doctor:
-                doctor = Doctor(
-                    doctor_name=row['doctor_name'],
-                    clinic_code=row['clinic_code']
-                )
-                db.add(doctor)
-                db.commit()
-                db.refresh(doctor)
-           
-            # --- 2. PATIENT ---
-            # Menggunakan class Patient yang benar
-            patient = db.query(Patient).filter(Patient.patient_name == row['patient_name']).first()
-            if not patient:
-                gender_input = row['gender']
-                if gender_input in ['Male', 'L', 'M', 'Laki-laki']:
-                    gender_db = "Male"
-                elif gender_input in ['Female', 'P', 'Perempuan']:
-                    gender_db = "Female"
-                else:
-                    gender_db = "Unknown"
-               
-                email_dummy = row['patient_name'].replace(" ", ".").lower().replace("'", "") + "@example.com"
-               
-                patient = Patient(
-                    patient_name=row['patient_name'],
-                    email=email_dummy,
-                    # Pastikan format tanggal sesuai: '%Y-%m-%d'
-                    date_of_birth=datetime.strptime(str(row['date_of_birth']), '%Y-%m-%d'),
-                    gender=gender_db,
-                    age=int(row['age']),
-                    insurance=row['insurance']
-                )
-                db.add(patient)
-                db.commit()
-                db.refresh(patient)
-
-            # --- 3. VISIT ---
-            visit_date = str(row['visit_date']).split(" ")[0] # Ambil hanya tanggal jika ada timestamp
-            fmt = "%Y-%m-%d %H:%M:%S"
-           
-            # Menggunakan class Visit yang benar. Status default di DB adalah REGISTERED,
-            # tapi karena ini data historis, kita set ke COMPLETED.
-            visit = Visit(
-                patient_id=patient.id,
-                doctor_id=doctor.id,
-                registration_time = datetime.strptime(f"{visit_date} {row['registration_time']}", fmt),
-                checkin_time      = datetime.strptime(f"{visit_date} {row['checkin_time']}", fmt),
-                triage_time       = datetime.strptime(f"{visit_date} {row['triage_time']}", fmt),
-                clinic_entry_time = datetime.strptime(f"{visit_date} {row['clinic_entry_time']}", fmt),
-                doctor_call_time  = datetime.strptime(f"{visit_date} {row['doctor_call_time']}", fmt),
-                completion_time   = datetime.strptime(f"{visit_date} {row['completion_time']}", fmt),
-                status=VisitStatus.COMPLETED
-            )
-            db.add(visit)
-            count_success += 1
-           
-        except Exception as e:
-            db.rollback()
-            print(f"⚠️ Error at row {index} (Data: {row.get('patient_name', 'N/A')}): {e}")
-            continue
-
-    db.commit()
-    db.close()
-    print(f"✅ Success! {count_success} rows imported to MySQL.")
-
-if __name__ == "__main__":
-    seed_data()
+if __name__ == &quot;__main__&quot;:
+main()
