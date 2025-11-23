@@ -9,6 +9,7 @@ import os
 
 CSV_FILE = "data_final_hospital.csv"
 
+# Variabel ini mungkin membaca nilai dari .env atau shell
 DEFAULT_ADMIN_USERNAME = os.environ.get("ADMIN_USER", "admin_rs")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "password123")
 
@@ -25,8 +26,14 @@ def create_default_admin(db: Session):
     )
 
     if existing_admin is None:
-        # POTONG PASSWORD HINGGA MAKSIMUM 72 KARAKTER UNTUK KEPATUHAN BCrypt
-        password_to_hash = DEFAULT_ADMIN_PASSWORD[:72]
+        # PENTING: Bersihkan whitespace, lalu potong untuk kepatuhan BCrypt
+        password_clean = DEFAULT_ADMIN_PASSWORD.strip()
+        password_to_hash = password_clean[:72]
+       
+        # Diagnostik: Print panjang password sebelum di-hash
+        print(f"DEBUG: Password length before hashing: {len(password_to_hash)} chars.")
+       
+        # Hashing akan dilakukan pada string yang sudah dibersihkan dan dipotong
         hashed_password = pwd_context.hash(password_to_hash)
 
         admin_user = User(
@@ -38,7 +45,7 @@ def create_default_admin(db: Session):
 
         db.add(admin_user)
         db.commit()
-        print(f"✅ Default Admin user '{DEFAULT_ADMIN_USERNAME}' created (Password truncated to 72 chars).")
+        print(f"✅ Default Admin user '{DEFAULT_ADMIN_USERNAME}' created (Password length: {len(password_to_hash)}).")
     else:
         print(f"☑️ Admin user '{DEFAULT_ADMIN_USERNAME}' already exists.")
 
@@ -107,3 +114,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
