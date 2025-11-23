@@ -2,6 +2,8 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal, Base
 from modules.master.models import Doctor
+# IMPOR MODEL TERKAIT UNTUK MEMASTIKAN SEMUA MAPPED CLASS DIMUAT OLEH SQLAlchemy
+from modules.queue.models import Visit
 from modules.auth.models import User, RoleEnum
 import os
 
@@ -15,6 +17,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_default_admin(db: Session):
+    """Membuat user admin default jika belum ada."""
     existing_admin = (
         db.query(User)
         .filter(User.username == DEFAULT_ADMIN_USERNAME)
@@ -22,7 +25,9 @@ def create_default_admin(db: Session):
     )
 
     if existing_admin is None:
-        hashed_password = pwd_context.hash(DEFAULT_ADMIN_PASSWORD)
+        # POTONG PASSWORD HINGGA MAKSIMUM 72 KARAKTER UNTUK KEPATUHAN BCrypt
+        password_to_hash = DEFAULT_ADMIN_PASSWORD[:72]
+        hashed_password = pwd_context.hash(password_to_hash)
 
         admin_user = User(
             username=DEFAULT_ADMIN_USERNAME,
@@ -33,12 +38,13 @@ def create_default_admin(db: Session):
 
         db.add(admin_user)
         db.commit()
-        print(f"✅ Default Admin user '{DEFAULT_ADMIN_USERNAME}' created.")
+        print(f"✅ Default Admin user '{DEFAULT_ADMIN_USERNAME}' created (Password truncated to 72 chars).")
     else:
         print(f"☑️ Admin user '{DEFAULT_ADMIN_USERNAME}' already exists.")
 
 
 def seed_doctors_from_csv(db: Session):
+    """Mengisi data dokter dari file CSV."""
     if not os.path.exists(CSV_FILE):
         print(f"❌ Error: File CSV '{CSV_FILE}' not found. Skipping doctor seeding.")
         return
@@ -58,6 +64,7 @@ def seed_doctors_from_csv(db: Session):
         name = str(row["Doctor_Name"]).strip()
         code = str(row["Clinic_Code"]).strip()
 
+        # Cek apakah dokter dengan nama dan kode klinik yang sama sudah ada
         exists = db.query(Doctor).filter(
             Doctor.doctor_name == name,
             Doctor.clinic_code == code
@@ -82,6 +89,7 @@ def seed_doctors_from_csv(db: Session):
 
 def main():
     print("Initializing DB...")
+    # PENTING: Base.metadata.create_all harus dipanggil setelah semua model diimpor
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
@@ -92,7 +100,7 @@ def main():
         print("--- Done ---")
     except Exception as e:
         db.rollback()
-        print(f"❌ Error: {e}")
+        print(f"❌ Error during seeding process: {e}")
     finally:
         db.close()
 
