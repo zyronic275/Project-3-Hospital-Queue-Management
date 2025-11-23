@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from database import Base
 import datetime
 import enum
-from modules.master.models import Doctor  # <--- WAJIB ADA
+from modules.master.models import Doctor  # WAJIB agar Visit dapat resolve Doctor
 
 
 class VisitStatus(str, enum.Enum):
@@ -35,5 +35,6 @@ class Visit(Base):
     t_service_finish = Column(DateTime)
     t_finished = Column(DateTime)
 
-    # --- Relasi Ke Dokter ---
+    # Relasi ke Doctor — gunakan "Doctor" saja
     doctor = relationship("Doctor", back_populates="visits")
+

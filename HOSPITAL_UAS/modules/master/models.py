@@ -11,8 +11,9 @@ class Doctor(Base):
     clinic_code = Column(String(50), nullable=False)
     is_active = Column(Boolean, default=True)
 
-    # Relasi ke tabel Visit (module queue)
+    # Relasi ke Visit — gunakan "Visit", bukan dotted path
     visits = relationship(
-        "modules.queue.models.Visit",
+        "Visit",          # <--- sudah benar
         back_populates="doctor"
     )
+
