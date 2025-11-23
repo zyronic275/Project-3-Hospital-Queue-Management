@@ -23,6 +23,10 @@ class Visit(Base):
     patient_name = Column(String(100), nullable=False)
     patient_mr_number = Column(String(20), index=True)
 
+    gender = Column(String(20), nullable=False)
+    age = Column(Integer, nullable=False)
+    insurance_type = Column(String(100), nullable=False)
+
     doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=False)
 
     status = Column(Enum(VisitStatus), default=VisitStatus.WAITING_REG)
