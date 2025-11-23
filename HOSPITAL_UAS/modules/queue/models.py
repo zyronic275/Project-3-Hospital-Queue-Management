@@ -4,55 +4,44 @@ from database import Base
 import datetime
 import enum
 
-# --- ENUM untuk Status Antrian ---
-# Ini membantu melacak status pasien dengan jelas
-class VisitStatus(str, enum.Enum):
-WAITING_REG = &quot;Menunggu Pendaftaran&quot;
-IN_QUEUE = &quot;Dalam Antrean&quot;
-CALLED = &quot;Dipanggil Dokter&quot;
-IN_SERVICE = &quot;Sedang Dilayani&quot;
-FINISHED = &quot;Selesai Pelayanan&quot;
 
-CANCELED = &quot;Dibatalkan&quot;
+# --- ENUM untuk Status Antrian ---
+class VisitStatus(str, enum.Enum):
+    WAITING_REG = "Menunggu Pendaftaran"
+    IN_QUEUE = "Dalam Antrean"
+    CALLED = "Dipanggil Dokter"
+    IN_SERVICE = "Sedang Dilayani"
+    FINISHED = "Selesai Pelayanan"
+    CANCELED = "Dibatalkan"
+
 
 # --- MODEL UTAMA: VISIT ---
 class Visit(Base):
-__tablename__ = &quot;visits&quot;
+    __tablename__ = "visits"
 
-# Kunci Utama dan Indeks
-id = Column(Integer, primary_key=True, index=True)
-queue_number = Column(Integer, index=True, nullable=False)
+    # Kunci Utama
+    id = Column(Integer, primary_key=True, index=True)
 
-# Data Pasien
-patient_name = Column(String(100), nullable=False)
-patient_mr_number = Column(String(20), index=True) # Medical Record Number
+    # Nomor Antrian
+    queue_number = Column(Integer, index=True, nullable=False)
 
-# Kunci Asing (Foreign Key)
-# Menghubungkan kunjungan ini ke dokter tertentu
-doctor_id = Column(Integer, ForeignKey(&quot;doctors.id&quot;), nullable=False)
+    # Data Pasien
+    patient_name = Column(String(100), nullable=False)
+    patient_mr_number = Column(String(20), index=True)
 
-# Status Antrian
-status = Column(Enum(VisitStatus), default=VisitStatus.WAITING_REG)
+    # Relasi ke Doctor (FK)
+    doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=False)
 
-# --- 6 Timestamp Penting (VisitHistory) ---
-# 1. Waktu Pendaftaran (Saat entri dibuat, dari QR code scan)
-t_register = Column(DateTime, default=datetime.datetime.utcnow)
+    # Status Antrian
+    status = Column(Enum(VisitStatus), default=VisitStatus.WAITING_REG)
 
-# 2. Waktu Masuk Antrean (Setelah dokumen pendaftaran diverifikasi)
-t_in_queue = Column(DateTime)
+    # Timestamps
+    t_register = Column(DateTime, default=datetime.datetime.utcnow)
+    t_in_queue = Column(DateTime)
+    t_called = Column(DateTime)
+    t_in_service = Column(DateTime)
+    t_service_finish = Column(DateTime)
+    t_finished = Column(DateTime)
 
-# 3. Waktu Dipanggil Dokter
-t_called = Column(DateTime)
-
-# 4. Waktu Masuk Ruangan Dokter (Mulai Pelayanan)
-t_in_service = Column(DateTime)
-
-# 5. Waktu Selesai Pelayanan Dokter
-t_service_finish = Column(DateTime)
-
-# 6. Waktu Selesai Proses Administrasi (Keluar dari Sistem Antrian)
-t_finished = Column(DateTime)
-
-# Relasi balik ke tabel Doctor
-# Ini harus sesuai dengan back_populates=&quot;visits&quot; di modules/master/models.py
-doctor = relationship(&quot;Doctor&quot;, back_populates=&quot;visits&quot;)
+    # Relasi balik ke Doctor
+    doctor = relationship("modules.master.models.Doctor", back_populates="visits")
