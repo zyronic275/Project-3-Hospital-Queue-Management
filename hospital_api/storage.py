@@ -1,4 +1,4 @@
-# storage.py
+# hospital_api/storage.py
 
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Time, Table
 from sqlalchemy.ext.declarative import declarative_base
@@ -7,35 +7,32 @@ import datetime
 import os
 
 # --- Konfigurasi Database (SQLite) ---
-# Menggunakan SQLite, data disimpan di file 'hospital.db'
-# Gunakan path relatif agar konsisten di berbagai lingkungan
+# DB akan dibuat di root directory (di luar folder hospital_api)
 SQLALCHEMY_DATABASE_URL = "sqlite:///./hospital.db" 
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
-    # Penting untuk SQLite agar thread FastAPI bisa berjalan
     connect_args={"check_same_thread": False}
 )
 
-# Mendefinisikan SessionLocal 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-# --- Tabel Asosiasi (Many-to-Many untuk Doctor & Service) ---
+# --- Tabel Asosiasi ---
 doctor_service_association = Table(
     'doctor_service', Base.metadata,
     Column('doctor_id', Integer, ForeignKey('doctors.id'), primary_key=True),
     Column('service_id', Integer, ForeignKey('services.id'), primary_key=True)
 )
 
-# --- Definisi Model (Tabel) ---
+# --- Definisi Model ---
 
 class Service(Base):
     __tablename__ = "services"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
-    prefix = Column(String, index=True) # Contoh: 'UMUM', 'GIGI', 'JANTUNG'
+    prefix = Column(String, index=True)
     
     doctors = relationship("Doctor", secondary=doctor_service_association, back_populates="services")
     queues = relationship("Queue", back_populates="service")
@@ -57,6 +54,9 @@ class Patient(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     date_of_birth = Column(DateTime)
+    # 👇 KOLOM BARU YANG DITAMBAHKAN
+    age = Column(Integer, nullable=True) 
+    gender = Column(String, nullable=True) 
     
     queues = relationship("Queue", back_populates="patient")
 
@@ -80,9 +80,3 @@ class Queue(Base):
 def init_db():
     """Membuat tabel database jika belum ada."""
     Base.metadata.create_all(bind=engine)
-    
-# Tambahkan fungsi ini untuk memastikan kompatibilitas dengan import di main.py
-if 'hospital_api' not in os.listdir(os.getcwd()):
-    # Ini hanya jika file ini tidak di dalam package
-    # Biasanya digunakan untuk migrasi data awal
-    pass

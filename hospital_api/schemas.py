@@ -1,102 +1,82 @@
-# schemas.py
+# hospital_api/storage.py
 
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from datetime import datetime, date, time
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Time, Table
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+import datetime
+import os
 
-# --- Base Schemas ---\
-class ServiceBase(BaseModel):
-    name: str
-    prefix: str = Field(max_length=5)
-    class Config:
-        from_attributes = True
+# --- Konfigurasi Database (SQLite) ---
+# DB akan dibuat di root directory (di luar folder hospital_api)
+SQLALCHEMY_DATABASE_URL = "sqlite:///./hospital.db" 
 
-class DoctorBase(BaseModel):
-    doctor_code: str = Field(max_length=10)
-    name: str
-    practice_start_time: time
-    practice_end_time: time
-    max_patients: int
-    class Config:
-        from_attributes = True
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False}
+)
 
-class PatientBase(BaseModel):
-    name: str
-    date_of_birth: date
-    class Config:
-        from_attributes = True
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# --- ADMIN CRUD Schemas ---\
-class ServiceCreate(ServiceBase): pass
-class ServiceUpdate(ServiceBase):
-    name: Optional[str] = None
-    prefix: Optional[str] = None
-class ServiceSchema(ServiceBase):
-    id: int
+Base = declarative_base()
 
-class DoctorSchema(DoctorBase):
-    id: int
-    services: List[ServiceSchema] = []
+# --- Tabel Asosiasi ---
+doctor_service_association = Table(
+    'doctor_service', Base.metadata,
+    Column('doctor_id', Integer, ForeignKey('doctors.id'), primary_key=True),
+    Column('service_id', Integer, ForeignKey('services.id'), primary_key=True)
+)
+
+# --- Definisi Model ---
+
+class Service(Base):
+    __tablename__ = "services"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    prefix = Column(String, index=True)
     
-class DoctorCreate(DoctorBase):
-    services: List[int] # List ID Service
+    doctors = relationship("Doctor", secondary=doctor_service_association, back_populates="services")
+    queues = relationship("Queue", back_populates="service")
 
-class DoctorUpdate(DoctorBase):
-    doctor_code: Optional[str] = None
-    name: Optional[str] = None
-    practice_start_time: Optional[time] = None
-    practice_end_time: Optional[time] = None
-    max_patients: Optional[int] = None
-    services: Optional[List[int]] = None
+class Doctor(Base):
+    __tablename__ = "doctors"
+    id = Column(Integer, primary_key=True, index=True)
+    doctor_code = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
+    practice_start_time = Column(Time)
+    practice_end_time = Column(Time)
+    max_patients = Column(Integer)
+    
+    services = relationship("Service", secondary=doctor_service_association, back_populates="doctors")
+    queues = relationship("Queue", back_populates="doctor")
 
-# --- PUBLIC/QUEUE SCHEMAS ---\
-class PatientSchema(PatientBase):
-    id: int
+class Patient(Base):
+    __tablename__ = "patients"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    date_of_birth = Column(DateTime)
+    # 👇 KOLOM BARU YANG DITAMBAHKAN
+    age = Column(Integer, nullable=True) 
+    gender = Column(String, nullable=True) 
+    
+    queues = relationship("Queue", back_populates="patient")
 
-class DoctorAvailableSchema(DoctorSchema):
-    remaining_quota: int = 0
-    class Config:
-        from_attributes = True
+class Queue(Base):
+    __tablename__ = "queues"
+    id = Column(Integer, primary_key=True, index=True)
+    queue_id_display = Column(String, unique=True, index=True)
+    queue_number = Column(Integer)
+    status = Column(String) # menunggu, sedang dilayani, selesai
+    registration_time = Column(DateTime, default=datetime.datetime.now)
+    visit_result = Column(String, nullable=True) # Hasil diagnosis atau catatan kunjungan
+    
+    patient_id = Column(Integer, ForeignKey("patients.id"))
+    service_id = Column(Integer, ForeignKey("services.id"))
+    doctor_id = Column(Integer, ForeignKey("doctors.id"))
+    
+    patient = relationship("Patient", back_populates="queues")
+    service = relationship("Service", back_populates="queues")
+    doctor = relationship("Doctor", back_populates="queues")
 
-class Ticket(BaseModel):
-    service: ServiceSchema
-    queue_number: str
-    doctor: DoctorSchema
-    qr_code_base64: str # <--- FIELD BARU UNTUK QR CODE
-    class Config:
-        from_attributes = True
-
-class RegistrationRequest(BaseModel):
-    patient_name: str
-    date_of_birth: date
-    service_ids: List[int]
-    doctor_id: Optional[int] = None
-
-class RegistrationResponse(BaseModel): # <--- CLASS BARU UNTUK RESPON QR
-    patient: PatientSchema
-    tickets: List[Ticket]
-
-class ClinicStatus(BaseModel):
-    service_id: int
-    service_name: str
-    doctors_count: int
-    max_patients_total: int
-    patients_waiting: int
-    patients_serving: int
-    total_patients_today: int
-    density_percentage: float
-
-class QueueSchema(BaseModel):
-    id: int
-    queue_id_display: str
-    queue_number: int
-    status: str
-    registration_time: datetime
-    patient_id: int
-    service_id: int
-    doctor_id: int
-    class Config:
-        from_attributes = True
-
-class QueueStatusUpdate(BaseModel):
-    status: str # menunggu, sedang dilayani, selesai, tidak hadir
+def init_db():
+    """Membuat tabel database jika belum ada."""
+    Base.metadata.create_all(bind=engine)

@@ -1,3 +1,5 @@
+# main.py
+
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -8,7 +10,7 @@ import qrcode
 from io import BytesIO
 import base64
 
-# Local imports
+# Local imports (Mengimpor dari package hospital_api)
 from hospital_api import storage
 from hospital_api import schemas
 
@@ -38,30 +40,20 @@ def get_db():
     finally:
         db.close()
 
-# --- QR Code Utility ---
+# --- QR Code Utility (Fungsi yang hilang) ---
 def generate_qr_code_base64(data: str) -> str:
-    """Menghasilkan QR Code untuk data tertentu dan mengembalikan string Base64."""
-    
-    # Konfigurasi QR Code
+    """Menghasilkan QR Code untuk data tertentu dan mengembalikan string base64."""
     qr = qrcode.QRCode(
         version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H, # Koreksi tinggi, cocok untuk barcode yang di-scan berulang
+        error_correction=qrcode.constants.ERROR_CORRECT_H, 
         box_size=4,
         border=4,
     )
-    
-    # Menambahkan data (ID Antrean Display)
     qr.add_data(data)
     qr.make(fit=True)
-    
-    # Membuat gambar
     img = qr.make_image(fill_color='black', back_color='white')
-    
-    # Menyimpan gambar ke buffer memori (BytesIO)
     buffer = BytesIO()
     img.save(buffer, format="PNG")
-    
-    # Mengkodekan ke Base64
     base64_encoded_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
     return base64_encoded_image
 
@@ -74,7 +66,6 @@ def time_to_seconds(t: datetime.time) -> int:
 
 @router_public.get("/services/{service_id}/available-doctors", response_model=List[schemas.DoctorAvailableSchema])
 def get_available_doctors(service_id: int, db: Session = Depends(get_db)):
-    # ... (kode fungsi get_available_doctors yang sudah ada) ...
     service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
@@ -86,16 +77,14 @@ def get_available_doctors(service_id: int, db: Session = Depends(get_db)):
     for doctor in service.doctors:
         if time_to_seconds(doctor.practice_start_time) <= time_to_seconds(current_time) <= time_to_seconds(doctor.practice_end_time):
             
-            # Hitung jumlah pasien yang sudah mendaftar hari ini untuk dokter ini
             registered_today = db.query(storage.Queue).filter(
                 storage.Queue.doctor_id == doctor.id,
                 func.date(storage.Queue.registration_time) == today
             ).count()
 
-            # Hanya tampilkan jika kuota masih tersisa
             remaining_quota = doctor.max_patients - registered_today
             if remaining_quota > 0:
-                available_doctors.append(schemas.DoctorAvailableSchema.model_validate(doctor, update={"remaining_quota": remaining_quota}))
+                available_doctors.append(schemas.ailableSchema.model_validate(doctor, update={"remaining_quota": remaining_quota}))
                 
     return available_doctors
 
@@ -106,7 +95,6 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
     valid_doctor_services = []
     
     for service_id in request.service_ids:
-        # Cek ketersediaan dokter
         available_doctors = db.query(storage.Doctor).join(storage.Doctor.services).filter(
             storage.Service.id == service_id
         ).all()
@@ -114,7 +102,6 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
         if not available_doctors:
             raise HTTPException(status_code=400, detail=f"No doctors available for service ID {service_id}")
 
-        # Jika doctor_id spesifik diminta, validasi apakah dokter tersebut melayani service ini
         selected_doctor = None
         if request.doctor_id:
             selected_doctor = db.query(storage.Doctor).filter(
@@ -124,11 +111,9 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
             if not selected_doctor or service_id not in [s.id for s in selected_doctor.services]:
                 raise HTTPException(status_code=400, detail="Requested doctor does not serve this service.")
         
-        # Jika tidak ada doctor_id spesifik, pilih dokter yang paling sedikit antreannya
         if not selected_doctor:
             today = datetime.date.today()
             
-            # Hitung antrean aktif (menunggu/dilayani) untuk setiap dokter
             doctor_queues = {}
             for doctor in available_doctors:
                 active_queues = db.query(storage.Queue).filter(
@@ -138,21 +123,24 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
                 ).count()
                 doctor_queues[doctor] = active_queues
             
-            # Pilih dokter dengan antrean paling sedikit
             selected_doctor = min(doctor_queues, key=doctor_queues.get)
             
         valid_doctor_services.append({'service_id': service_id, 'doctor': selected_doctor})
 
     # 2. Registrasi Pasien (atau temukan yang sudah ada)
+    patient_dob_query = datetime.datetime.combine(request.date_of_birth, datetime.time.min)
+
     patient = db.query(storage.Patient).filter(
         storage.Patient.name == request.patient_name,
-        func.date(storage.Patient.date_of_birth) == request.date_of_birth
+        storage.Patient.date_of_birth == patient_dob_query
     ).first()
 
     if not patient:
         patient = storage.Patient(
             name=request.patient_name, 
-            date_of_birth=request.date_of_birth
+            date_of_birth=patient_dob_query,
+            age=request.age, # Menggunakan field baru
+            gender=request.gender # Menggunakan field baru
         )
         db.add(patient)
         db.commit()
@@ -164,7 +152,6 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
         service = db.query(storage.Service).filter(storage.Service.id == item['service_id']).first()
         doctor = item['doctor']
         
-        # Hitung nomor antrean berikutnya (queue_number) untuk hari ini
         today = datetime.date.today()
         latest_queue = db.query(storage.Queue).filter(
             storage.Queue.doctor_id == doctor.id,
@@ -173,12 +160,8 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
         
         next_queue_number = (latest_queue.queue_number + 1) if latest_queue else 1
         
-        # Format queue_id_display: PREFIX-DXXX-NNNN
-        # DXXX adalah Doctor Code (dari Doctor)
-        # NNNN adalah queue_number (4 digit)
         queue_id_display = f"{service.prefix}-{doctor.doctor_code}-{next_queue_number:04d}"
         
-        # Buat objek Queue baru
         new_queue = storage.Queue(
             queue_id_display=queue_id_display,
             queue_number=next_queue_number,
@@ -192,14 +175,13 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
         db.commit()
         db.refresh(new_queue)
         
-        # Menghasilkan QR Code Base64 untuk Queue ID Display
         qr_code_base64 = generate_qr_code_base64(queue_id_display)
         
         new_tickets.append(schemas.Ticket(
             service=schemas.ServiceSchema.model_validate(service),
-            queue_number=queue_id_display, # Menggunakan ID Display sebagai nomor tiket
+            queue_number=queue_id_display,
             doctor=schemas.DoctorSchema.model_validate(doctor),
-            qr_code_base64=qr_code_base64 # Tambahkan QR code ke tiket
+            qr_code_base64=qr_code_base64
         ))
         
     # 4. Kembalikan Respon
@@ -207,8 +189,6 @@ def register_patient(request: schemas.RegistrationRequest, db: Session = Depends
         patient=schemas.PatientSchema.model_validate(patient),
         tickets=new_tickets
     )
-
-# ... (Fungsi router_public.get("/queue/by-clinic/{service_id}") yang sudah ada) ...
 
 @router_public.get("/queue/by-clinic/{service_id}", response_model=List[schemas.QueueSchema])
 def get_queue_by_clinic(service_id: int, db: Session = Depends(get_db)):
@@ -224,7 +204,7 @@ def get_queue_by_clinic(service_id: int, db: Session = Depends(get_db)):
     return queues
 
 # =================================================================
-# ADMIN QUEUE MANAGEMENT ENDPOINTS (New)
+# ADMIN QUEUE MANAGEMENT ENDPOINTS
 # =================================================================
 
 @router_queue_management.put("/update-status/{queue_id_display}", 
@@ -232,13 +212,12 @@ def get_queue_by_clinic(service_id: int, db: Session = Depends(get_db)):
     summary="Update status antrean berdasarkan Queue ID Display (via QR/Barcode Scan)")
 def update_queue_status(
     queue_id_display: str, 
-    update: schemas.QueueStatusUpdate, # Menggunakan schema dari schemas.py
+    update: schemas.QueueStatusUpdate,
     db: Session = Depends(get_db)
 ):
     """
     Endpoint ini digunakan oleh aplikasi scanner/admin untuk mengubah status antrean pasien.
     """
-    # 1. Cari antrean berdasarkan queue_id_display
     queue = db.query(storage.Queue).filter(
         storage.Queue.queue_id_display == queue_id_display
     ).first()
@@ -246,13 +225,14 @@ def update_queue_status(
     if not queue:
         raise HTTPException(status_code=404, detail="Antrean tidak ditemukan.")
 
-    # 2. Validasi status baru
     valid_statuses = ["menunggu", "sedang dilayani", "selesai", "tidak hadir"]
     if update.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Status tidak valid. Harus salah satu dari: {', '.join(valid_statuses)}")
 
-    # 3. Update status
     queue.status = update.status
+    if update.visit_result is not None:
+        queue.visit_result = update.visit_result
+        
     db.commit()
     db.refresh(queue)
 
@@ -260,15 +240,14 @@ def update_queue_status(
 
 # =================================================================
 # ADMIN DOCTORS ENDPOINTS
-# ... (kode fungsi router_admin_doctors yang sudah ada) ...
+# =================================================================
+
 @router_admin_doctors.post("/", response_model=schemas.DoctorSchema)
 def create_doctor(doctor: schemas.DoctorCreate, db: Session = Depends(get_db)):
-    # 1. Pastikan Doctor Code unik
     existing_doctor = db.query(storage.Doctor).filter(storage.Doctor.doctor_code == doctor.doctor_code).first()
     if existing_doctor:
         raise HTTPException(status_code=400, detail="Doctor Code already registered")
 
-    # 2. Buat objek Doctor
     db_doctor = storage.Doctor(
         doctor_code=doctor.doctor_code,
         name=doctor.name,
@@ -277,7 +256,6 @@ def create_doctor(doctor: schemas.DoctorCreate, db: Session = Depends(get_db)):
         max_patients=doctor.max_patients
     )
     
-    # 3. Asosiasikan dengan Services
     services = db.query(storage.Service).filter(storage.Service.id.in_(doctor.services)).all()
     if len(services) != len(doctor.services):
         raise HTTPException(status_code=404, detail="One or more service IDs not found")
@@ -306,7 +284,6 @@ def update_doctor(doctor_id: int, update: schemas.DoctorUpdate, db: Session = De
 
     update_data = update.model_dump(exclude_unset=True)
     
-    # Handle services association separately
     if "services" in update_data:
         service_ids = update_data.pop("services")
         services = db.query(storage.Service).filter(storage.Service.id.in_(service_ids)).all()
@@ -332,7 +309,8 @@ def delete_doctor(doctor_id: int, db: Session = Depends(get_db)):
 
 # =================================================================
 # ADMIN SERVICES ENDPOINTS
-# ... (kode fungsi router_admin_services yang sudah ada) ...
+# =================================================================
+
 @router_admin_services.post("/", response_model=schemas.ServiceSchema)
 def create_service(service: schemas.ServiceCreate, db: Session = Depends(get_db)):
     db_service = storage.Service(**service.model_dump())
@@ -363,4 +341,13 @@ def delete_service(service_id: int, db: Session = Depends(get_db)):
     service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-    
+    db.delete(service)
+    db.commit()
+    return
+
+# Menambahkan routers ke aplikasi utama
+app.include_router(router_public)
+app.include_router(router_admin_services)
+app.include_router(router_admin_doctors)
+app.include_router(router_monitoring)
+app.include_router(router_queue_management)
