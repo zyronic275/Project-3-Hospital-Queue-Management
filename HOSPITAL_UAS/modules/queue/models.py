@@ -1,10 +1,12 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Enum
 from sqlalchemy.orm import relationship
-from database import Base
+from ..database import Base
 import datetime
 import enum
+from modules.master.models import Doctor, Service 
+from modules.master.models import GenderRestriction # Import GenderRestriction
 
-
+# VisitStatus (Tidak Berubah)
 class VisitStatus(str, enum.Enum):
     WAITING_REG = "Menunggu Pendaftaran"
     IN_QUEUE = "Dalam Antrean"
@@ -18,18 +20,18 @@ class Visit(Base):
     __tablename__ = "visits"
 
     id = Column(Integer, primary_key=True, index=True)
-    queue_number = Column(Integer, index=True, nullable=False)
-
+    
+    queue_sequence = Column(Integer, index=True, nullable=False) 
+    
     patient_name = Column(String(100), nullable=False)
     patient_mr_number = Column(String(20), index=True)
-
-    gender = Column(String(20), nullable=False)
+    gender = Column(String(20), nullable=False) # 'MALE' atau 'FEMALE'
     age = Column(Integer, nullable=False)
     insurance_type = Column(String(100), nullable=False)
 
     doctor_id = Column(Integer, ForeignKey("doctors.id"), nullable=False)
 
-    status = Column(Enum(VisitStatus), default=VisitStatus.WAITING_REG)
+    status = Column(Enum(VisitStatus), default=VisitStatus.IN_QUEUE) 
 
     t_register = Column(DateTime, default=datetime.datetime.utcnow)
     t_in_queue = Column(DateTime)
@@ -39,3 +41,9 @@ class Visit(Base):
     t_finished = Column(DateTime)
 
     doctor = relationship("modules.master.models.Doctor", back_populates="visits")
+    
+    @property
+    def queue_number(self):
+        if self.doctor and self.doctor.service:
+            return f"{self.doctor.service.prefix}-{self.doctor.doctor_code}-{self.queue_sequence:03d}"
+        return f"Q-{self.queue_sequence:03d}"

@@ -5,7 +5,7 @@ import os
 
 load_dotenv()
 
-# Koneksi MySQL
+# --- Konfigurasi Koneksi MySQL dari file .env ---
 SQLALCHEMY_DATABASE_URL = (
     f"mysql+pymysql://{os.getenv('DB_USER')}:"
     f"{os.getenv('DB_PASSWORD')}"
@@ -13,16 +13,19 @@ SQLALCHEMY_DATABASE_URL = (
     f"{os.getenv('DB_NAME')}"
 )
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_recycle=3600,             # Mendaur ulang koneksi setelah 1 jam
+    connect_args={"connect_timeout": 10})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
 
 def get_db():
+    """Dependency Injection untuk mendapatkan sesi database."""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
