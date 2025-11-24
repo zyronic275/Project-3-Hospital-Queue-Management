@@ -4,8 +4,9 @@ from database import engine, Base
 
 # Model harus diimport supaya SQLAlchemy tahu mereka ada
 from modules.auth import models as auth_models
-from modules.master import models as master_models
-from modules.queue import models as queue_models
+# DIUBAH: Memastikan Model Service diimpor
+from modules.master import models as master_models 
+from modules.queue import models as queue_models 
 
 # Router
 from modules.auth.routers import router as auth_router
@@ -14,6 +15,7 @@ from modules.queue.routers import router as queue_router
 
 
 # --- Setup Database ---
+# Base.metadata.create_all harus dipanggil SETELAH semua model diimpor
 Base.metadata.create_all(bind=engine)
 
 
