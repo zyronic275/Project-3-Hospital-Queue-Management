@@ -1,67 +1,88 @@
-from sqlalchemy import create_engine, Column, Integer, String, Time, Date, ForeignKey, Table, DateTime
-from sqlalchemy.orm import sessionmaker, relationship, declarative_base
+# storage.py
+
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Time, Table
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
 import datetime
 import os
 
-# 1. Database Connection
-# --- FIX: Use Absolute Path ---
-# This ensures the DB is always found next to storage.py, 
-# no matter where you run the terminal command from.
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'hospital.db')}"
+# --- Konfigurasi Database (SQLite) ---
+# Menggunakan SQLite, data disimpan di file 'hospital.db'
+# Gunakan path relatif agar konsisten di berbagai lingkungan
+SQLALCHEMY_DATABASE_URL = "sqlite:///./hospital.db" 
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# 2. Association Table
-doctor_service_association = Table(
-    'doctor_services', Base.metadata,
-    Column('doctor_id', Integer, ForeignKey('doctors.id')),
-    Column('service_id', Integer, ForeignKey('services.id'))
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    # Penting untuk SQLite agar thread FastAPI bisa berjalan
+    connect_args={"check_same_thread": False}
 )
 
-# 3. Define Tables
+# Mendefinisikan SessionLocal 
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+# --- Tabel Asosiasi (Many-to-Many untuk Doctor & Service) ---
+doctor_service_association = Table(
+    'doctor_service', Base.metadata,
+    Column('doctor_id', Integer, ForeignKey('doctors.id'), primary_key=True),
+    Column('service_id', Integer, ForeignKey('services.id'), primary_key=True)
+)
+
+# --- Definisi Model (Tabel) ---
+
 class Service(Base):
     __tablename__ = "services"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
-    prefix = Column(String)
+    prefix = Column(String, index=True) # Contoh: 'UMUM', 'GIGI', 'JANTUNG'
+    
+    doctors = relationship("Doctor", secondary=doctor_service_association, back_populates="services")
+    queues = relationship("Queue", back_populates="service")
 
 class Doctor(Base):
     __tablename__ = "doctors"
     id = Column(Integer, primary_key=True, index=True)
-    doctor_code = Column(String)
-    name = Column(String)
+    doctor_code = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
     practice_start_time = Column(Time)
     practice_end_time = Column(Time)
-    max_patients = Column(Integer, default=20)
-    services = relationship("Service", secondary=doctor_service_association, backref="doctors")
+    max_patients = Column(Integer)
+    
+    services = relationship("Service", secondary=doctor_service_association, back_populates="doctors")
+    queues = relationship("Queue", back_populates="doctor")
 
 class Patient(Base):
     __tablename__ = "patients"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    age = Column(Integer, nullable=True)
-    gender = Column(String, nullable=True)
-    # NEW: Date of Birth field
-    date_of_birth = Column(Date, nullable=True)
+    date_of_birth = Column(DateTime)
+    
+    queues = relationship("Queue", back_populates="patient")
 
 class Queue(Base):
     __tablename__ = "queues"
     id = Column(Integer, primary_key=True, index=True)
-    queue_id_display = Column(String)
+    queue_id_display = Column(String, unique=True, index=True)
     queue_number = Column(Integer)
-    status = Column(String, default="menunggu")
+    status = Column(String) # menunggu, sedang dilayani, selesai
     registration_time = Column(DateTime, default=datetime.datetime.now)
+    visit_result = Column(String, nullable=True) # Hasil diagnosis atau catatan kunjungan
     
     patient_id = Column(Integer, ForeignKey("patients.id"))
     service_id = Column(Integer, ForeignKey("services.id"))
     doctor_id = Column(Integer, ForeignKey("doctors.id"))
-
-    patient = relationship("Patient")
-    service = relationship("Service")
-    doctor = relationship("Doctor")
+    
+    patient = relationship("Patient", back_populates="queues")
+    service = relationship("Service", back_populates="queues")
+    doctor = relationship("Doctor", back_populates="queues")
 
 def init_db():
+    """Membuat tabel database jika belum ada."""
     Base.metadata.create_all(bind=engine)
+    
+# Tambahkan fungsi ini untuk memastikan kompatibilitas dengan import di main.py
+if 'hospital_api' not in os.listdir(os.getcwd()):
+    # Ini hanya jika file ini tidak di dalam package
+    # Biasanya digunakan untuk migrasi data awal
+    pass

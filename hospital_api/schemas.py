@@ -1,47 +1,47 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from datetime import datetime, time, date
-from typing import List, Optional, Any
-from enum import Enum
+# schemas.py
 
-class QueueStatus(str, Enum):
-    menunggu = "menunggu"
-    sedang_dilayani = "sedang dilayani"
-    selesai = "selesai"
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime, date, time
 
-# --- Base Schemas ---
-
+# --- Base Schemas ---\
 class ServiceBase(BaseModel):
     name: str
-    prefix: str = Field(..., max_length=4)
+    prefix: str = Field(max_length=5)
+    class Config:
+        from_attributes = True
 
 class DoctorBase(BaseModel):
-    doctor_code: str
+    doctor_code: str = Field(max_length=10)
     name: str
     practice_start_time: time
     practice_end_time: time
     max_patients: int
-    services: List[int] 
+    class Config:
+        from_attributes = True
 
 class PatientBase(BaseModel):
     name: str
-    date_of_birth: Optional[date] = None
+    date_of_birth: date
+    class Config:
+        from_attributes = True
 
-class QueueBase(BaseModel):
-    status: QueueStatus = QueueStatus.menunggu
-
-# --- Create/Update Schemas ---
-
-class ServiceCreate(ServiceBase):
-    pass
-
-class DoctorCreate(DoctorBase):
-    pass
-
-class ServiceUpdate(BaseModel):
+# --- ADMIN CRUD Schemas ---\
+class ServiceCreate(ServiceBase): pass
+class ServiceUpdate(ServiceBase):
     name: Optional[str] = None
-    prefix: Optional[str] = Field(None, max_length=4)
+    prefix: Optional[str] = None
+class ServiceSchema(ServiceBase):
+    id: int
 
-class DoctorUpdate(BaseModel):
+class DoctorSchema(DoctorBase):
+    id: int
+    services: List[ServiceSchema] = []
+    
+class DoctorCreate(DoctorBase):
+    services: List[int] # List ID Service
+
+class DoctorUpdate(DoctorBase):
     doctor_code: Optional[str] = None
     name: Optional[str] = None
     practice_start_time: Optional[time] = None
@@ -49,62 +49,32 @@ class DoctorUpdate(BaseModel):
     max_patients: Optional[int] = None
     services: Optional[List[int]] = None
 
-class QueueStatusUpdate(BaseModel):
-    status: QueueStatus
-
-# --- Response Schemas (UPDATED FOR PYDANTIC V2) ---
-
-class ServiceSchema(ServiceBase):
-    id: int
-    # NEW SYNTAX: ConfigDict
-    model_config = ConfigDict(from_attributes=True)
-
-class DoctorSchema(DoctorBase):
-    id: int
-    model_config = ConfigDict(from_attributes=True)
-
-    @field_validator('services', mode='before')
-    @classmethod
-    def parse_services(cls, v: Any):
-        if v and isinstance(v, list) and hasattr(v[0], 'id'):
-            return [item.id for item in v]
-        return v
-
+# --- PUBLIC/QUEUE SCHEMAS ---\
 class PatientSchema(PatientBase):
     id: int
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    model_config = ConfigDict(from_attributes=True)
 
-class QueueSchema(QueueBase):
-    id: int
-    queue_id_display: str
-    queue_number: int
-    registration_time: datetime
-    patient_id: int
-    service_id: int
-    doctor_id: int
-    model_config = ConfigDict(from_attributes=True)
-
-# --- Registration & Ticket ---
+class DoctorAvailableSchema(DoctorSchema):
+    remaining_quota: int = 0
+    class Config:
+        from_attributes = True
 
 class Ticket(BaseModel):
     service: ServiceSchema
     queue_number: str
     doctor: DoctorSchema
+    qr_code_base64: str # <--- FIELD BARU UNTUK QR CODE
+    class Config:
+        from_attributes = True
 
 class RegistrationRequest(BaseModel):
     patient_name: str
-    date_of_birth: Optional[date] = None
+    date_of_birth: date
     service_ids: List[int]
     doctor_id: Optional[int] = None
 
-class RegistrationResponse(BaseModel):
+class RegistrationResponse(BaseModel): # <--- CLASS BARU UNTUK RESPON QR
     patient: PatientSchema
     tickets: List[Ticket]
-
-class DoctorAvailableSchema(DoctorSchema):
-    remaining_quota: int
 
 class ClinicStatus(BaseModel):
     service_id: int
@@ -115,3 +85,18 @@ class ClinicStatus(BaseModel):
     patients_serving: int
     total_patients_today: int
     density_percentage: float
+
+class QueueSchema(BaseModel):
+    id: int
+    queue_id_display: str
+    queue_number: int
+    status: str
+    registration_time: datetime
+    patient_id: int
+    service_id: int
+    doctor_id: int
+    class Config:
+        from_attributes = True
+
+class QueueStatusUpdate(BaseModel):
+    status: str # menunggu, sedang dilayani, selesai, tidak hadir
