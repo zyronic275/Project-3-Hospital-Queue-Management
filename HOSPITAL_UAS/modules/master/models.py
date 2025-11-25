@@ -8,7 +8,7 @@ class Service(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)
-    prefix = Column(String(4), unique=True, nullable=False) # Contoh: 'U' untuk Umum, 'G' untuk Gigi
+    prefix = Column(String(100), unique=True, nullable=False) # Contoh: 'U' untuk Umum, 'G' untuk Gigi
     is_active = Column(Boolean, default=True)
 
     # Hubungan ke Dokter (One-to-Many: Satu Service memiliki banyak Doctors)
