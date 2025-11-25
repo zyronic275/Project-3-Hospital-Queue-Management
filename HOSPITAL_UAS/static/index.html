@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dasbor Antrean Rumah Sakit</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator/qrcode.js"></script> 
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .view { display: none; }
+        .view.active { display: block; }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.6);
+            transition: opacity 0.3s ease-in-out;
+        }
+        .tab-button.active-tab {
+            color: #2563EB; 
+            border-color: #2563EB; 
+        }
+        .toast {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            transform: translateY(20px);
+            opacity: 0;
+            z-index: 1000;
+        }
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .card-hover:hover {
+             transform: translateY(-5px);
+             box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="container mx-auto p-4 lg:p-6">
+        <header class="bg-white shadow rounded-lg p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Dasbor Manajemen Antrean</h1>
+            <p class="text-gray-600">Pusat kontrol untuk pendaftaran, administrasi, dan monitoring.</p>
+        </header>
+
+        <div class="mb-4 border-b border-gray-200 bg-white rounded-t-lg">
+            <nav class="flex -mb-px" aria-label="Tabs">
+                <button onclick="switchView('dashboard')" class="tab-button active-tab whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-view="dashboard">
+                    <i class="fas fa-tachometer-alt mr-2"></i>Monitoring
+                </button>
+                <button onclick="switchView('admin')" class="tab-button whitespace-nowrap py-4 px-4 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-view="admin">
+                    <i class="fas fa-user-shield mr-2"></i>Manajemen Admin
+                </button>
+                <button onclick="switchView('registration')" class="tab-button whitespace-nowrap py-4 px-4 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-view="registration">
+                    <i class="fas fa-edit mr-2"></i>Pendaftaran Pasien
+                </button>
+                <button onclick="switchView('public')" class="tab-button whitespace-nowrap py-4 px-4 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-view="public">
+                    <i class="fas fa-tv mr-2"></i>Layar Antrean Publik
+                </button>
+            </nav>
+        </div>
+
+        <main>
+            <div id="dashboard-view" class="view active">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" id="dashboard-grid">
+                    <p class="text-gray-500 col-span-full text-center">Memuat data dashboard...</p>
+                </div>
+            </div>
+
+            <div id="admin-view" class="view">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    </div>
+            </div>
+
+            <div id="registration-view" class="view">
+                <div class="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Form Pendaftaran Pasien</h2>
+                    
+                    <div id="ticket-area" class="hidden bg-green-50 border border-green-200 p-6 rounded-lg mb-6 text-center">
+                        <h3 class="text-xl font-bold text-green-800 mb-3">✅ Pendaftaran Berhasil!</h3>
+                        <p class="text-gray-700 mb-4">Nomor Antrean Anda:</p>
+                        <div class="text-5xl font-extrabold text-blue-700 mb-6 font-mono" id="ticket-queue-number">U-1-001</div>
+                        
+                        <p class="text-sm text-gray-500 mb-2">Scan QR ini untuk update status tunggu Anda:</p>
+                        <canvas id="ticket-qrcode" class="mx-auto border p-2 bg-white"></canvas>
+                        <p class="text-xs text-gray-500 mt-2" id="ticket-visit-id">ID Kunjungan: 123</p>
+                        <button onclick="resetRegistration()" class="mt-4 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Daftar Pasien Lain</button>
+                    </div>
+
+                    <div id="registration-form-container">
+                        <form id="registration-form">
+                            <div class="mb-6 border p-4 rounded-lg bg-gray-50" id="step-1">
+                                <h3 class="font-bold mb-3 text-blue-600">1. Data Pasien & Kebutuhan</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div><label for="patient-name" class="block text-gray-700 text-sm font-bold mb-2">Nama Pasien</label><input type="text" id="patient-name" name="patient_name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div>
+                                    <div><label for="age" class="block text-gray-700 text-sm font-bold mb-2">Umur (Tahun)</label><input type="number" id="age" name="age" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required min="1"></div>
+                                    <div><label for="gender" class="block text-gray-700 text-sm font-bold mb-2">Jenis Kelamin</label><select id="gender" name="gender" class="shadow border rounded w-full py-2 px-3 text-gray-700" required><option value="">Pilih...</option><option value="MALE">Laki-laki</option><option value="FEMALE">Perempuan</option></select></div>
+                                    <div><label for="insurance_type" class="block text-gray-700 text-sm font-bold mb-2">Tipe Asuransi</label><select id="insurance_type" name="insurance_type" class="shadow border rounded w-full py-2 px-3 text-gray-700" required><option value="PRIBADI">Pribadi</option><option value="ASURANSI">Asuransi</option><option value="BPJS">BPJS</option></select></div>
+                                </div>
+                                <div class="flex justify-end mt-4"><button type="button" onclick="loadAvailableServices()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Lanjut ➞</button></div>
+                            </div>
+                            
+                            <div class="mb-6 border p-4 rounded-lg bg-gray-50 hidden" id="step-2">
+                                <h3 class="font-bold mb-3 text-blue-600">2. Layanan & Waktu Konsultasi</h3>
+                                <div class="mb-4">
+                                    <label class="block text-gray-700 text-sm font-bold mb-2">Pilih Layanan (Tersedia berdasarkan Filter Pasien)</label>
+                                    <div id="service-options-container" class="space-y-2"></div>
+                                </div>
+                                <div class="mb-4">
+                                     <label for="consultation-time" class="block text-gray-700 text-sm font-bold mb-2">Waktu Konsultasi (HH:MM)</label>
+                                     <input type="time" id="consultation-time" name="consultation_time" class="shadow border rounded w-full py-2 px-3 text-gray-700" value="09:00" required>
+                                </div>
+                                <div class="flex justify-between mt-4">
+                                    <button type="button" onclick="showStep(1)" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">← Kembali</button>
+                                    <button type="button" onclick="loadAvailableDoctors()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Cari Dokter ➞</button>
+                                </div>
+                            </div>
+
+                            <div class="mb-6 border p-4 rounded-lg bg-gray-50 hidden" id="step-3">
+                                <h3 class="font-bold mb-3 text-red-600">3. Pilih Dokter (Tersedia Berdasarkan Waktu)</h3>
+                                <div id="doctor-options-container" class="space-y-2 p-3 bg-white rounded-lg"></div>
+                                <div class="flex justify-between mt-4">
+                                    <button type="button" onclick="showStep(2)" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">← Kembali</button>
+                                    <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg shadow">
+                                        <i class="fas fa-paper-plane mr-2"></i>Daftarkan Pasien
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            </main>
+    </div>
+
+    <div id="toast" class="toast hidden fixed bottom-5 right-5 p-4 rounded-lg text-white shadow-lg max-w-sm"></div>
+
+<script>
+// --- KONFIGURASI ---
+const API_BASE_URL = 'http://localhost:8000/api/v1'; 
+let servicesCache = [];
+let doctorsCache = [];
+let currentClinicId = null; 
+
+// --- STATE REGISTRASI ---
+let patientData = {}; 
+let selectedServiceId = null;
+
+// --- UTILITIES ---
+async function apiRequest(endpoint, method = 'GET', body = null) {
+    // Implementasi apiRequest (sama seperti sebelumnya)
+}
+function showToast(message, isError = false) {
+    // Implementasi showToast (sama seperti sebelumnya)
+}
+function showStep(step) {
+    document.querySelectorAll('[id^="step-"]').forEach(el => el.classList.add('hidden'));
+    document.getElementById(`step-${step}`).classList.remove('hidden');
+    if (step < 3) {
+        document.getElementById('doctor-options-container').innerHTML = '';
+    }
+}
+function resetRegistration() {
+    document.getElementById('registration-form').reset();
+    document.getElementById('ticket-area').classList.add('hidden');
+    document.getElementById('registration-form-container').classList.remove('hidden');
+    selectedServiceId = null;
+    patientData = {};
+    showStep(1);
+}
+
+// --- ALUR 3 LANGKAH PENDAFTARAN ---
+
+async function loadAvailableServices() {
+    const age = parseInt(document.getElementById('age').value);
+    const gender = document.getElementById('gender').value;
+    const insurance_type = document.getElementById('insurance_type').value;
+
+    if (!age || !gender || !insurance_type) {
+        showToast("Mohon lengkapi Usia, Jenis Kelamin, dan Tipe Asuransi.", true);
+        return;
+    }
+
+    patientData = { age, gender: gender.toUpperCase(), insurance_type };
+    const container = document.getElementById('service-options-container');
+    container.innerHTML = '<p class="text-gray-500">Mencari layanan tersedia...</p>';
+
+    try {
+        // Endpoint baru: POST /queue/available-services
+        const availableServices = await apiRequest('/queue/available-services', 'POST', patientData);
+        container.innerHTML = '';
+        
+        if (availableServices.length === 0) {
+            container.innerHTML = '<p class="text-yellow-600 font-semibold">Tidak ada layanan yang sesuai dengan filter pasien ini.</p>';
+            return;
+        }
+
+        availableServices.forEach(service => {
+            const restrictionText = service.gender_restriction !== 'NONE' ? `(Hanya ${service.gender_restriction})` : '';
+            const ageText = `Usia: ${service.min_age}-${service.max_age} thn`;
+            
+            const option = `<label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100 cursor-pointer">
+                <input type="radio" name="registration-services" value="${service.id}" data-name="${service.name}" class="form-radio h-5 w-5 text-blue-600">
+                <span class="font-medium">${service.name} (${service.prefix})</span>
+                <span class="text-xs text-gray-500 ml-auto">${ageText} ${restrictionText}</span>
+            </label>`;
+            container.innerHTML += option;
+        });
+
+        showStep(2); 
+    } catch (error) {
+        showToast(`Gagal memuat layanan: ${error.message}`, true);
+        container.innerHTML = '<p class="text-red-600">Error saat memuat layanan.</p>';
+    }
+}
+
+async function loadAvailableDoctors() {
+    const selectedServiceRadio = document.querySelector('input[name="registration-services"]:checked');
+    const consultationTime = document.getElementById('consultation-time').value;
+
+    if (!selectedServiceRadio) {
+        showToast('Mohon pilih layanan terlebih dahulu.', true);
+        return;
+    }
+    if (!consultationTime) {
+        showToast('Mohon tentukan waktu konsultasi.', true);
+        return;
+    }
+
+    selectedServiceId = parseInt(selectedServiceRadio.value);
+    
+    const doctorOptionsContainer = document.getElementById('doctor-options-container');
+    doctorOptionsContainer.innerHTML = '<p class="text-gray-500">Mencari dokter tersedia...</p>';
+
+    try {
+        // Endpoint baru: /admin/services/{service_id}/available-doctors-by-time
+        const endpoint = `/admin/services/${selectedServiceId}/available-doctors-by-time?consultation_time=${consultationTime}`;
+        const availableDoctors = await apiRequest(endpoint, 'GET'); 
+        
+        doctorOptionsContainer.innerHTML = '';
+
+        if (availableDoctors.length > 0) {
+            availableDoctors.forEach(doctor => {
+                doctorOptionsContainer.innerHTML += `<label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100 cursor-pointer">
+                    <input type="radio" name="registration-doctor" value="${doctor.id}" class="form-radio h-5 w-5 text-blue-600" required>
+                    <span>${doctor.doctor_name} (Kode ${doctor.id})</span>
+                    <span class="text-sm text-green-600 ml-auto font-semibold">Sisa Kuota: ${doctor.remaining_quota}</span>
+                </label>`;
+            });
+            showStep(3); 
+        } else {
+             doctorOptionsContainer.innerHTML = '<p class="text-yellow-600 font-semibold">Tidak ada dokter yang tersedia pada waktu tersebut atau kuota penuh.</p>';
+        }
+    } catch (error) {
+        showToast(`Gagal memuat dokter: ${error.message}`, true);
+        doctorOptionsContainer.innerHTML = '<p class="text-red-600">Error saat memuat dokter.</p>';
+    }
+}
+
+async function handleRegistrationFormSubmit(event) {
+    event.preventDefault();
+    
+    const selectedDoctorRadio = document.querySelector('input[name="registration-doctor"]:checked');
+    if (!selectedDoctorRadio) { 
+        showToast('Silakan pilih dokter terlebih dahulu.', true); 
+        return; 
+    }
+    
+    const registrationData = {
+        patient_name: document.getElementById('patient-name').value,
+        patient_mr_number: '', 
+        gender: patientData.gender,
+        age: patientData.age,
+        insurance_type: patientData.insurance_type,
+        doctor_id: parseInt(selectedDoctorRadio.value),
+        consultation_time: document.getElementById('consultation-time').value 
+    };
+    
+    try {
+        const response = await apiRequest('/queue/register', 'POST', registrationData); 
+        
+        document.getElementById('ticket-queue-number').textContent = response.queue_number;
+        document.getElementById('ticket-visit-id').textContent = `ID Kunjungan: ${response.id}`;
+        
+        generateQRCode('ticket-qrcode', response.id);
+
+        document.getElementById('registration-form-container').classList.add('hidden');
+        document.getElementById('ticket-area').classList.remove('hidden');
+        
+        showToast(`Pendaftaran berhasil! Antrean: ${response.queue_number}`);
+        // Refresh dashboard setelah pendaftaran
+        // fetchDashboardData(); 
+        
+    } catch(error) {
+        showToast(`Gagal mendaftar: ${error.message}`, true);
+    }
+}
+
+function generateQRCode(canvasId, visitId) {
+    // Implementasi generateQRCode (sama seperti sebelumnya)
+}
+
+// --- INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', () => {
+    // Logika untuk memuat data admin/dashboard (Anda harus implementasikan ini)
+    // fetchAllAdminData(); 
+    
+    showStep(1); 
+    
+    document.getElementById('registration-form').addEventListener('submit', handleRegistrationFormSubmit);
+});
+</script>

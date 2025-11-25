@@ -1,0 +1,11 @@
+doctor_name,doctor_code,max_patients,practice_start_time,practice_end_time,service_name,service_prefix
+dr. Abel,1,50,8:00:00,17:00:00,Poli Umum,U
+dr. There,2,50,8:00:00,17:00:00,Poli Mata,M
+dr. Eiya,3,50,8:00:00,17:00:00,Poli Paru,R
+dr. Riel,4,50,8:00:00,17:00:00,Poli Gigi,G
+dr. Tatang Suherman,5,50,8:00:00,17:00:00,Jantung,X
+dr. Donald Duck,6,50,8:00:00,17:00:00,Jantung,X
+dr. Selena Gomez,7,50,8:00:00,17:00:00,Jantung,X
+dr. Justin Bieber,8,50,8:00:00,17:00:00,Jantung,X
+dr. Justin,9,50,8:00:00,17:00:00,Poli Gigi,G
+dr. Darell,10,50,8:00:00,17:00:00,Poli Umum,U
