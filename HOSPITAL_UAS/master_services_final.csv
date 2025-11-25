@@ -1,0 +1,6 @@
+service_name,prefix,min_age,max_age,gender_restriction,is_active
+Poli Umum,U,0,100,NONE,TRUE
+Poli Mata,M,0,100,NONE,TRUE
+Poli Paru,R,10,100,NONE,TRUE
+Poli Gigi,G,5,100,NONE,TRUE
+Jantung,X,0,100,NONE,TRUE
