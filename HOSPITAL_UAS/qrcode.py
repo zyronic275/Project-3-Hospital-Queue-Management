@@ -96,6 +96,7 @@ def scan_qr_code_update_status(queue_id: int, db: Session = Depends(get_db)):
     if new_status:
         # Perbarui status di database
         queue_record.status = new_status
+        # Anda bisa menambahkan logika update waktu di sini jika perlu (misal: checkin_time = datetime.now())
         db.commit()
         db.refresh(queue_record)
         return {"status": "success", "message": message, "new_status": new_status, "queue_id": queue_id}
