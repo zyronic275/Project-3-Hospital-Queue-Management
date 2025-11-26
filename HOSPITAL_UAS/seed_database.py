@@ -170,7 +170,6 @@ def seed_visits_from_csv(db: Session, service_map: dict):
         if d_key not in doctor_map:
             # print(f"⚠️ Doctor not found in map: {d_key}")
             continue
-
         doctor_id = doctor_map[d_key]
 
         # ... (Logika pembuatan Visit sama, hanya memastikan doctor_id benar)
@@ -212,7 +211,7 @@ def seed_visits_from_csv(db: Session, service_map: dict):
             continue
 
     if visits_to_add:
-        # Perlu menghapus Visits lama untuk seeding yang bersih
+        # Perlu menghapus Visits lama untuk seeding yang bersihm
         db.query(Visit).delete() 
         db.add_all(visits_to_add)
         db.commit()
@@ -227,7 +226,6 @@ def seed_visits_from_csv(db: Session, service_map: dict):
 def main():
     print("🔧 Initializing DB...")
     Base.metadata.create_all(bind=engine)
-
     db = SessionLocal()
     try:
         print("=== START SEEDING ===")
