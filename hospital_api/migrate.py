@@ -1,10 +1,11 @@
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy.orm import Session
 import os
+import random
 
-# Import from storage (NOT schemas)
-from storage import init_db, SessionLocal, Service, Doctor, Patient, Queue
+# Import models
+from storage import Service, Doctor, Patient, Queue
 
 def get_prefix(poli_name):
     """Smart prefix generator for names like 'Poli Umum' -> 'UMUM'"""
@@ -15,74 +16,96 @@ def get_prefix(poli_name):
             return parts[1][:4]
     return name_upper[:4]
 
-def run_migration():
-    # Ensure we are looking at the DB in the same folder
-    db_path = os.path.join(os.path.dirname(__file__), "hospital.db")
+def seed_data(db: Session, count: int):
+    """
+    Mengambil data dari CSV dan mengimport sejumlah 'count' baris secara acak.
+    """
+    print(f"Memulai proses seeding untuk {count} data...")
     
-    # Optional: Remove old DB to start fresh
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print("Removed old database.")
-        
-    print("Initializing Database...")
-    init_db()
-    db = SessionLocal()
-    
-    print("Reading CSV...")
-    # Make sure the CSV is in the same folder as this script
+    # 1. Load CSV
     csv_path = os.path.join(os.path.dirname(__file__), "healthcare_dataset_altered.csv")
     if not os.path.exists(csv_path):
-        print(f"ERROR: CSV file not found at {csv_path}")
-        return
-
+        raise FileNotFoundError(f"File CSV tidak ditemukan di: {csv_path}")
+        
     df = pd.read_csv(csv_path)
-
-    # --- 1. Import Services (Poli) ---
-    print("Importing Services...")
-    poli_map = {} 
     
-    for poli_name in df['Poli'].unique():
-        prefix = get_prefix(poli_name)
-        service = Service(name=poli_name, prefix=prefix)
-        db.add(service)
-        db.commit()
-        db.refresh(service)
-        poli_map[poli_name] = service
+    # Ambil sample random sejumlah 'count' (atau max baris jika count > total)
+    real_count = min(count, len(df))
+    df_sample = df.sample(n=real_count)
+    
+    print(f"Mengambil {real_count} baris acak dari dataset.")
 
-    # --- 2. Import Doctors ---
-    print("Importing Doctors...")
-    doctor_groups = df.groupby('Doctor')['Poli'].apply(set)
+    # Cache dictionaries untuk mencegah duplikasi saat loop
+    poli_map = {}
     doctor_map = {}
-    code_counter = 1
     
-    for name, polis in doctor_groups.items():
-        doc = Doctor(
-            name=name,
-            doctor_code=f"{code_counter:03d}",
-            practice_start_time=datetime.strptime("08:00:00", "%H:%M:%S").time(),
-            practice_end_time=datetime.strptime("17:00:00", "%H:%M:%S").time(),
-            max_patients=50
-        )
-        for poli in polis:
-            doc.services.append(poli_map[poli])
+    created_services = 0
+    created_doctors = 0
+    created_patients = 0
+    created_queues = 0
+
+    # Loop setiap baris sample
+    for i, row in df_sample.iterrows():
+        
+        # --- A. Handle Service (Poli) ---
+        poli_name = row['Poli']
+        
+        # Cek apakah service sudah ada di DB atau di cache map
+        if poli_name not in poli_map:
+            service = db.query(Service).filter(Service.name == poli_name).first()
+            if not service:
+                service = Service(name=poli_name, prefix=get_prefix(poli_name))
+                db.add(service)
+                db.commit()
+                db.refresh(service)
+                created_services += 1
+            poli_map[poli_name] = service
+        
+        current_service = poli_map[poli_name]
+
+        # --- B. Handle Doctor ---
+        doc_name = row['Doctor']
+        
+        if doc_name not in doctor_map:
+            doctor = db.query(Doctor).filter(Doctor.name == doc_name).first()
+            if not doctor:
+                # Generate random code & time jika tidak ada info detail di CSV
+                doc_code = str(random.randint(100, 999))
+                # Default practice time
+                t_start = datetime.strptime("08:00", "%H:%M").time()
+                t_end = datetime.strptime("16:00", "%H:%M").time()
+                
+                doctor = Doctor(
+                    doctor_code=doc_code,
+                    name=doc_name,
+                    practice_start_time=t_start,
+                    practice_end_time=t_end,
+                    max_patients=20
+                )
+                db.add(doctor)
+                db.commit()
+                db.refresh(doctor)
+                created_doctors += 1
             
-        db.add(doc)
-        db.commit()
-        db.refresh(doc)
-        doctor_map[name] = doc
-        code_counter += 1
+            # Pastikan dokter terhubung ke service ini
+            if current_service not in doctor.services:
+                doctor.services.append(current_service)
+                db.commit()
+                
+            doctor_map[doc_name] = doctor
+            
+        current_doctor = doctor_map[doc_name]
 
-    # --- 3. Import Patients ---
-    print("Importing Patients...")
-    unique_patients = df[['Name', 'Age', 'Gender', 'Date of Birth']].drop_duplicates(subset=['Name'])
-    patient_map = {}
-    
-    for _, row in unique_patients.iterrows():
+        # --- C. Handle Patient ---
+        # Parse Tanggal Lahir
         try:
-            dob = datetime.strptime(row['Date of Birth'], "%Y-%m-%d").date()
-        except ValueError:
-            dob = None # Handle invalid dates if any
+            dob_str = str(row['Date of Birth'])
+            dob = datetime.strptime(dob_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            dob = None
 
+        # Selalu buat pasien baru untuk simulasi queue (atau bisa cek nama jika ingin unik)
+        # Disini kita buat baru agar history tercatat sesuai baris CSV
         p = Patient(
             name=row['Name'], 
             age=row['Age'], 
@@ -92,42 +115,40 @@ def run_migration():
         db.add(p)
         db.commit()
         db.refresh(p)
-        patient_map[row['Name']] = p
+        created_patients += 1
 
-    # --- 4. Import Queues (History) ---
-    print("Importing Queues (History)...")
-    queues_to_add = []
-    
-    for i, row in df.iterrows():
-        service = poli_map[row['Poli']]
-        doctor = doctor_map[row['Doctor']]
-        patient = patient_map[row['Name']]
-        
+        # --- D. Handle Queue ---
         visit_date_str = row['Visit Date']
         arrival_time_str = row['Arrival Time']
         
-        reg_time = datetime.strptime(f"{visit_date_str} {arrival_time_str}", "%Y-%m-%d %H:%M:%S")
-        
+        try:
+            reg_time = datetime.strptime(f"{visit_date_str} {arrival_time_str}", "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            reg_time = datetime.now()
+
+        # Generate nomor antrian sederhana
+        queue_num = i + 1
+        q_display = f"{current_service.prefix}-{current_doctor.doctor_code}-{queue_num:04d}"
+
         q = Queue(
-            queue_id_display=f"{service.prefix}-{doctor.doctor_code}-{i+1:04d}",
-            queue_number=i+1,
-            status="selesai",
+            queue_id_display=q_display,
+            queue_number=queue_num,
+            status="selesai", # Anggap data historis CSV sebagai selesai
             registration_time=reg_time,
-            patient_id=patient.id,
-            service_id=service.id,
-            doctor_id=doctor.id
+            patient_id=p.id,
+            service_id=current_service.id,
+            doctor_id=current_doctor.id
         )
-        queues_to_add.append(q)
-        
-        if len(queues_to_add) >= 1000:
-            db.add_all(queues_to_add)
-            db.commit()
-            queues_to_add = []
-
-    db.add_all(queues_to_add)
+        db.add(q)
+        created_queues += 1
+    
     db.commit()
-    print("Migration Complete!")
-    db.close()
-
-if __name__ == "__main__":
-    run_migration()
+    
+    return {
+        "requested": count,
+        "processed": real_count,
+        "new_services": created_services,
+        "new_doctors": created_doctors,
+        "new_patients": created_patients,
+        "new_queues": created_queues
+    }

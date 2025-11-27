@@ -9,7 +9,7 @@ random.seed(42)
 #import data
 hospital_data= r"healthcare_dataset.csv"
 df = pd.read_csv('healthcare_dataset.csv')
-df = df.sample(n=1000, random_state=42)
+df = df.sample(n=9000, random_state=42)
 
 
 # Hapus kolom yang tidak diperlukan
@@ -69,18 +69,6 @@ for t in df["Arrival Time"]:
 
 df["Departure Time"] = departure_times
 
-########################### TAMBAHKAN TANGGAL (TERPISAH) #######################
-
-# Buat tanggal kunjungan random
-start_date = pd.to_datetime("2023-01-01")
-end_date   = pd.to_datetime("2023-01-31")
-
-jumlah_hari = (end_date - start_date).days
-
-df["Visit Date"] = [
-    (start_date + timedelta(days=np.random.randint(0, jumlah_hari + 1))).date()
-    for _ in range(len(df))
-]
 
 
 ############################DATA DOKTER##################################
@@ -88,8 +76,8 @@ df["Visit Date"] = [
 poli_umum = ["Dr. Abel", "Dr. Darell"]
 poli_gigi = ["Dr. Justin", "Dr. Riel"]
 poli_jantung  = ["Dr. There", "Dr. Eiya"]
-poli_mata = ["Dr. Selena Gomez", "Dr. Tatang Suherman"]
-poli_paru = ["Dr. Justin Bieber", "Dr. Donald Duck"]
+poli_mata = ["Dr. a", "Dr. b"]
+poli_paru = ["Dr. c", "Dr. d"]
 
 
 # Membuat daftar semua dokter
@@ -125,22 +113,5 @@ for _ in range(len(df)):
 df["Doctor"] = dokter
 df["Poli"] = poli
 
-df = df[[
-    "Name",
-    "Gender",
-    "Date of Birth",
-    "Age",
-    "Poli",
-    "Doctor",
-    "Visit Date",
-    "Arrival Time",
-    "Departure Time",
-    "Insurance Provider"
-]]
-
 df = df.sample(n=1000, random_state=42).reset_index(drop=True)
-
-# Save to new dataset
-df.to_csv('healthcare_dataset_altered.csv', index=False)
-print("File saved as healthcare_dataset_altered.csv")
 print(df)
