@@ -45,3 +45,4 @@ Penting untuk dicatat bahwa proyek ini adalah implementasi API dasar untuk tujua
 * *Tanpa Autentikasi: **Tidak mengimplementasikan mekanisme autentikasi* (seperti JWT atau Basic Auth) untuk menjaga fokus pada alur bisnis inti manajemen antrean.
 
 Untuk menjalankan project: uvicorn main:app --reload
+Untuk seeding database: python seeder.py
