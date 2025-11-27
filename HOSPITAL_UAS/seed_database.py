@@ -11,7 +11,7 @@ from modules.auth.models import User, RoleEnum
 from passlib.context import CryptContext
 import hashlib
 import pandas as pd
-import datetime # Ditambahkan untuk to_datetime
+import datetime 
 
 CSV_FILE = "data_final_hospital.csv"
 
@@ -19,7 +19,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ------------------------------------------------------------
-# CREATE DEFAULT ADMIN (TIDAK BERUBAH)
+# CREATE DEFAULT ADMIN 
 # ------------------------------------------------------------
 def create_default_admin(db: Session):
     user = db.query(User).filter(User.username == "admin_rs").first()
@@ -51,7 +51,7 @@ def seed_services_from_csv(db: Session):
     df_service = df[["clinic_code"]].dropna().drop_duplicates()
     
     inserted = 0
-    service_map = {} # Untuk mapping clinic_code -> service_id
+    service_map = {} # mapping clinic_code ke service_id
     
     for _, row in df_service.iterrows():
         clinic_code = str(row["clinic_code"]).strip()
