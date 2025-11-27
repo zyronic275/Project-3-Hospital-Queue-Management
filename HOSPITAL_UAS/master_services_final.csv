@@ -1,6 +1,6 @@
-service_name,prefix,min_age,max_age
-Poli Umum,U,0,100
-Poli Mata,M,0,100
-Poli Paru,R,10,100
-Poli Gigi,G,5,100
-Jantung,X,0,100
+service_name,prefix
+Poli Umum,U
+Poli Mata,M
+Poli Paru,R
+Poli Gigi,G
+Jantung,X
