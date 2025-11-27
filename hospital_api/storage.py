@@ -3,6 +3,9 @@ from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 import datetime
 import os
 
+# FILE MENGATUR KONEKSI DENGAN SQL
+
+
 # --- KONFIGURASI MYSQL ---
 # Ubah sesuai settingan komputer Anda
 DB_USER = "root"
