@@ -44,5 +44,7 @@ Penting untuk dicatat bahwa proyek ini adalah implementasi API dasar untuk tujua
 * *Data Non-Persistent: **Tidak menggunakan database relasional* atau NoSQL. Data *hanya disimpan sementara* menggunakan struktur data sederhana (list dan dictionary) selama server berjalan. *Data akan hilang* setelah server dihentikan.
 * *Tanpa Autentikasi: **Tidak mengimplementasikan mekanisme autentikasi* (seperti JWT atau Basic Auth) untuk menjaga fokus pada alur bisnis inti manajemen antrean.
 
+
+Jangan lupa setting koneksi mysql di database.py dulu sebelum menjalankan aplikasi!!!
 Untuk menjalankan project: uvicorn main:app --reload
 Untuk seeding database: python seeder.py
