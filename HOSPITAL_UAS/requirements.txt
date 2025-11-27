@@ -33,5 +33,11 @@ uvicorn==0.38.0
 # Dependensi yang Diperbarui: passlib dengan bcrypt sebagai dependensi opsional
 passlib
 bcrypt==4.0.1
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pandas
+pymysql
 pytest
 httpx
