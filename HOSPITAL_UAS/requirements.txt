@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.11.0
@@ -41,3 +42,9 @@ pandas
 pymysql
 pytest
 httpx
+=======
+fastapi
+uvicorn
+pandas
+python-dotenv
+>>>>>>> Stashed changes
