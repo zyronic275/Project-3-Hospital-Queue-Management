@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode.js/1.0.0/qrcode.min.js"></script> 
     <style>
         body { font-family: 'Inter', sans-serif; }
         .view { display: none; }
@@ -42,7 +43,6 @@
             <p class="text-gray-600">Pusat kontrol untuk pendaftaran, administrasi, dan monitoring.</p>
         </header>
 
-        <!-- Navigasi Tab -->
         <div class="mb-4 border-b border-gray-200 bg-white rounded-t-lg">
             <nav class="flex -mb-px" aria-label="Tabs">
                 <button onclick="switchView('dashboard')" class="tab-button active-tab whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-view="dashboard">
@@ -52,114 +52,172 @@
                     <i class="fas fa-user-shield mr-2"></i>Manajemen Admin
                 </button>
                 <button onclick="switchView('registration')" class="tab-button whitespace-nowrap py-4 px-4 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-view="registration">
-                    <i class="fas fa-edit mr-2"></i>Pendaftaran Pasien
+                    <i class="fas fa-qrcode mr-2"></i>Daftar & QR Code
                 </button>
-                 <button onclick="switchView('public')" class="tab-button whitespace-nowrap py-4 px-4 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-view="public">
+                <button onclick="switchView('public')" class="tab-button whitespace-nowrap py-4 px-4 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-view="public">
                     <i class="fas fa-tv mr-2"></i>Layar Antrean Publik
                 </button>
             </nav>
         </div>
 
         <main>
-            <!-- View: Dashboard Monitoring -->
             <div id="dashboard-view" class="view active">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" id="dashboard-grid">
-                    <!-- Data dasbor akan dimuat di sini -->
-                </div>
+                    </div>
             </div>
 
-            <!-- View: Manajemen Admin (TAMPILAN BARU) -->
             <div id="admin-view" class="view">
-                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <!-- Manajemen Layanan -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div class="bg-white p-6 rounded-lg shadow">
                         <div class="flex justify-between items-center mb-4">
                             <h2 class="text-xl font-bold text-gray-700">Manajemen Layanan (Klinik)</h2>
                             <button onclick="openServiceModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow"><i class="fas fa-plus mr-2"></i>Tambah</button>
                         </div>
-                        <!-- Header Tabel Kustom -->
                         <div class="flex text-xs font-medium text-gray-500 uppercase px-4 py-2 bg-gray-50 rounded-t-lg">
-                            <div class="flex-1">Nama</div>
-                            <div class="w-20 text-center">Prefix</div>
+                            <div class="flex-1">Nama & Lokasi</div>
                             <div class="w-24 text-right">Aksi</div>
                         </div>
-                        <!-- Konten Tabel Kustom -->
                         <div id="service-table-body" class="divide-y divide-gray-200">
-                            <!-- Data layanan akan dimuat di sini -->
-                        </div>
+                            </div>
                     </div>
-                    <!-- Manajemen Dokter -->
                     <div class="bg-white p-6 rounded-lg shadow">
                         <div class="flex justify-between items-center mb-4">
                             <h2 class="text-xl font-bold text-gray-700">Manajemen Dokter</h2>
                             <button onclick="openDoctorModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow"><i class="fas fa-plus mr-2"></i>Tambah</button>
                         </div>
-                         <!-- Header Tabel Kustom -->
-                        <div class="flex text-xs font-medium text-gray-500 uppercase px-4 py-2 bg-gray-50 rounded-t-lg">
-                            <div class="flex-1">Nama & Poli</div>
-                            <div class="w-28 text-center">Jam Praktik</div>
-                            <div class="w-16 text-center">Kuota</div>
+                       <div class="flex text-xs font-medium text-gray-500 uppercase px-4 py-2 bg-gray-50 rounded-t-lg">
+                            <div class="flex-1">Nama & Spesialisasi</div>
+                            <div class="w-28 text-center">Klinik</div>
                             <div class="w-24 text-right">Aksi</div>
                         </div>
-                        <!-- Konten Tabel Kustom -->
                         <div id="doctor-table-body" class="divide-y divide-gray-200">
-                           <!-- Data dokter akan dimuat di sini -->
-                        </div>
+                           </div>
                     </div>
                 </div>
             </div>
 
-            <!-- View: Pendaftaran Pasien (Formulir Asli) -->
             <div id="registration-view" class="view">
                 <div class="max-w-xl mx-auto bg-white p-8 rounded-lg shadow">
-                    <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Form Pendaftaran Pasien Baru</h2>
+                    <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Form Pendaftaran Kunjungan Baru</h2>
                     <form id="registration-form">
-                        <div class="mb-4">
-                            <label for="patient-name" class="block text-gray-700 text-sm font-bold mb-2">1. Nama Pasien</label>
-                            <input type="text" id="patient-name" name="patient_name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
-                        </div>
-                        <div class="mb-4">
-                            <label class="block text-gray-700 text-sm font-bold mb-2">2. Pilih Layanan (Klinik)</label>
-                            <div id="service-options-container" class="space-y-2">
-                                <!-- Opsi layanan akan dimuat di sini -->
+                        <div class="mb-4 border-b pb-4">
+                             <h3 class="text-lg font-semibold mb-2 text-blue-600">Data Pasien (Pasien baru akan otomatis dibuat)</h3>
+                            <div class="mb-4">
+                                <label for="patient-name" class="block text-gray-700 text-sm font-bold mb-2">1. Nama Pasien</label>
+                                <input type="text" id="patient-name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
                             </div>
+                            <div class="mb-4">
+                                <label for="patient-nik" class="block text-gray-700 text-sm font-bold mb-2">2. NIK (KTP - Harus Unik)</label>
+                                <input type="text" id="patient-nik" maxlength="16" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                            </div>
+                            <div class="mb-4 flex space-x-4">
+                                <div class="w-1/2">
+                                    <label for="patient-dob" class="block text-gray-700 text-sm font-bold mb-2">3. Tanggal Lahir</label>
+                                    <input type="date" id="patient-dob" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                                </div>
+                                <div class="w-1/2">
+                                    <label for="patient-gender" class="block text-gray-700 text-sm font-bold mb-2">4. Jenis Kelamin</label>
+                                    <select id="patient-gender" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none focus:shadow-outline" required>
+                                        <option value="Male">Laki-laki</option>
+                                        <option value="Female">Perempuan</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="patient-phone" class="block text-gray-700 text-sm font-bold mb-2">5. No. Telepon (Opsional)</label>
+                                <input type="text" id="patient-phone" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-bold mb-2">6. Pilih Layanan (Klinik)</label>
+                            <div id="service-options-container" class="space-y-2">
+                                </div>
                         </div>
                         <div id="doctor-choice-container" class="mb-6 hidden">
-                            <label class="block text-gray-700 text-sm font-bold mb-2">3. Pilih Dokter</label>
+                            <label class="block text-gray-700 text-sm font-bold mb-2">7. Pilih Dokter</label>
                             <div id="doctor-options-container" class="space-y-2 p-3 bg-gray-50 rounded-lg">
-                                <!-- Opsi dokter akan dimuat di sini -->
-                            </div>
+                                </div>
                         </div>
                         <div class="flex items-center justify-center mt-6">
                             <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg shadow">
-                                <i class="fas fa-paper-plane mr-2"></i>Daftarkan Pasien
+                                <i class="fas fa-paper-plane mr-2"></i>Dapatkan Nomor Antrean
                             </button>
                         </div>
                     </form>
                 </div>
             </div>
             
-            <!-- View: Layar Antrean Publik -->
             <div id="public-view" class="view">
-                <div class="mb-4 bg-white p-4 rounded-lg shadow"><label for="clinic-select" class="block text-gray-700 text-sm font-bold mb-2">Pilih Klinik untuk Ditampilkan:</label><select id="clinic-select" onchange="fetchQueueForClinic(this.value)" class="shadow border rounded w-full md:w-1/3 py-2 px-3 text-gray-700 focus:outline-none focus:shadow-outline"></select></div>
+                <div class="mb-4 bg-white p-4 rounded-lg shadow">
+                    <label for="clinic-select" class="block text-gray-700 text-sm font-bold mb-2">Pilih Klinik untuk Ditampilkan:</label>
+                    <select id="clinic-select" onchange="fetchQueueForClinic(this.value)" class="shadow border rounded w-full md:w-1/3 py-2 px-3 text-gray-700 focus:outline-none focus:shadow-outline">
+                        <option value="">-- Pilih Klinik --</option>
+                    </select>
+                </div>
                 <div id="queue-display" class="bg-white p-6 rounded-lg shadow">
-                    <div class="text-center mb-4"><h2 id="queue-clinic-name" class="text-2xl font-bold">Pilih sebuah klinik</h2><p id="queue-date" class="text-gray-600"></p></div>
-                    <div class="overflow-x-auto"><table class="min-w-full bg-white"><thead class="bg-gray-50"><tr><th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Antrean</th><th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waktu Daftar</th><th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th><th class="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th></tr></thead><tbody id="queue-table-body" class="divide-y divide-gray-200"></tbody></table></div>
+                    <div class="text-center mb-4">
+                        <h2 id="queue-clinic-name" class="text-2xl font-bold">Pilih sebuah klinik</h2>
+                        <p id="queue-date" class="text-gray-600"></p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Antrean</th>
+                                    <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waktu Daftar</th>
+                                    <th class="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queue-table-body" class="divide-y divide-gray-200">
+                                </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Modals (Layanan, Dokter, Konfirmasi) -->
-    <div id="service-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex justify-center items-center p-4"><div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6"><h2 id="service-modal-title" class="text-2xl font-bold mb-4"></h2><form id="service-form"><input type="hidden" id="service-id"><div class="mb-4"><label for="service-name" class="block text-gray-700 text-sm font-bold mb-2">Nama Layanan</label><input type="text" id="service-name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="service-prefix" class="block text-gray-700 text-sm font-bold mb-2">Prefix (1-4 Huruf)</label><input type="text" id="service-prefix" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required maxlength="4"></div><div class="flex justify-end space-x-4"><button type="button" onclick="closeServiceModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Batal</button><button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">Simpan</button></div></form></div></div>
-    <div id="doctor-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex justify-center items-center p-4"><div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6"><h2 id="doctor-modal-title" class="text-2xl font-bold mb-4"></h2><form id="doctor-form"><input type="hidden" id="doctor-id"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="mb-4"><label for="doctor-name" class="block text-gray-700 text-sm font-bold mb-2">Nama Dokter</label><input type="text" id="doctor-name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="doctor-code" class="block text-gray-700 text-sm font-bold mb-2">Kode Dokter</label><input type="text" id="doctor-code" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="practice-start-time" class="block text-gray-700 text-sm font-bold mb-2">Mulai Praktik</label><input type="time" id="practice-start-time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="practice-end-time" class="block text-gray-700 text-sm font-bold mb-2">Selesai Praktik</label><input type="time" id="practice-end-time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="max-patients" class="block text-gray-700 text-sm font-bold mb-2">Kuota Pasien</label><input type="number" id="max-patients" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required min="1"></div></div><div class="mb-4"><label class="block text-gray-700 text-sm font-bold mb-2">Layanan yang Ditangani</label><div id="doctor-service-options" class="grid grid-cols-2 gap-2"></div></div><div class="flex justify-end space-x-4"><button type="button" onclick="closeDoctorModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Batal</button><button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">Simpan</button></div></form></div></div>
+    <div id="service-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex justify-center items-center p-4"><div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6"><h2 id="service-modal-title" class="text-2xl font-bold mb-4"></h2><form id="service-form"><input type="hidden" id="service-id"><div class="mb-4"><label for="service-name" class="block text-gray-700 text-sm font-bold mb-2">Nama Layanan (Klinik)</label><input type="text" id="service-name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="service-location" class="block text-gray-700 text-sm font-bold mb-2">Lokasi</label><input type="text" id="service-location" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"></div><div class="flex justify-end space-x-4"><button type="button" onclick="closeServiceModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Batal</button><button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">Simpan</button></div></form></div></div>
+    <div id="doctor-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex justify-center items-center p-4"><div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6"><h2 id="doctor-modal-title" class="text-2xl font-bold mb-4"></h2><form id="doctor-form"><input type="hidden" id="doctor-id"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="mb-4"><label for="doctor-name" class="block text-gray-700 text-sm font-bold mb-2">Nama Dokter</label><input type="text" id="doctor-name" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4"><label for="doctor-specialization" class="block text-gray-700 text-sm font-bold mb-2">Spesialisasi</label><input type="text" id="doctor-specialization" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700" required></div><div class="mb-4 col-span-2"><label for="doctor-clinic-id" class="block text-gray-700 text-sm font-bold mb-2">Klinik yang Ditangani</label><select id="doctor-clinic-id" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none focus:shadow-outline" required></select></div></div><div class="flex justify-end space-x-4"><button type="button" onclick="closeDoctorModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Batal</button><button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">Simpan</button></div></form></div></div>
     <div id="confirm-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex justify-center items-center p-4"><div class="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 text-center"><h3 class="text-lg font-bold" id="confirm-title"></h3><p class="my-4" id="confirm-message"></p><div class="flex justify-center space-x-4"><button id="confirm-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Batal</button><button id="confirm-ok-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Hapus</button></div></div></div>
     
+    <div id="qrcode-result-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-lg p-8 transform transition-all overflow-hidden">
+            <h2 class="text-3xl font-bold text-green-600 mb-2 text-center"><i class="fas fa-check-circle mr-2"></i>Pendaftaran Berhasil!</h2>
+            <p class="text-center text-lg mb-6 text-gray-700">Nomor Antrean Anda Telah Tercetak.</p>
+
+            <div class="border border-dashed border-gray-300 p-6 rounded-lg bg-gray-50 mb-6">
+                <div class="text-center mb-4">
+                    <p class="text-sm text-gray-500 font-medium">NOMOR ANTRIAN</p>
+                    <h1 id="qr-queue-number" class="text-7xl font-extrabold text-blue-600">Q001</h1>
+                </div>
+                <div id="qrcode-container" class="mx-auto w-48 h-48 p-2 bg-white border border-gray-200">
+                    </div>
+                <p class="text-center text-sm mt-4 text-gray-600">Tunjukkan kode ini saat dipanggil atau simpan gambar ini.</p>
+            </div>
+
+            <div class="text-sm space-y-2 text-gray-700">
+                <p><strong>Pasien:</strong> <span id="qr-patient-name"></span></p>
+                <p><strong>Dokter Tujuan:</strong> <span id="qr-doctor-name"></span></p>
+                <p><strong>Tanggal Kunjungan:</strong> <span id="qr-visit-date"></span></p>
+            </div>
+
+            <div class="flex justify-center mt-6">
+                <button onclick="document.getElementById('qrcode-result-modal').classList.add('hidden');" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    </div>
+
+
     <div id="toast" class="toast hidden fixed bottom-5 right-5 p-4 rounded-lg text-white shadow-lg max-w-sm"></div>
 
 <script>
 const API_BASE_URL = 'http://127.0.0.1:8000'; 
-let servicesCache = [];
+let servicesCache = []; // Clinics
 let doctorsCache = [];
 
 // --- UTILITIES ---
@@ -170,6 +228,12 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
         if (!response.ok) {
             const errorData = await response.json();
+            // Handle HTTP 422 for pydantic validation errors
+            if (response.status === 422 && errorData.detail) {
+                const firstError = errorData.detail[0];
+                const msg = `${firstError.msg} (${firstError.loc.join('.')})`;
+                throw new Error(msg);
+            }
             throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
         return response.status === 204 ? null : await response.json();
@@ -191,7 +255,7 @@ function showToast(message, isError = false) {
     setTimeout(() => toast.classList.add('show'), 10);
     setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => toast.classList.add('hidden'), 5000);
+        setTimeout(() => toast.classList.add('hidden'), 300);
     }, 5000);
 }
 function openConfirmModal(title, message, onConfirm) {
@@ -215,6 +279,91 @@ function openConfirmModal(title, message, onConfirm) {
     cancelBtn.addEventListener('click', close);
     modal.classList.remove('hidden');
 }
+function getDoctorNameById(id) {
+    const doctor = doctorsCache.find(d => d.id === id);
+    return doctor ? `Dr. ${doctor.name} (${doctor.specialization})` : `Dokter ID ${id}`;
+}
+function getClinicNameById(id) {
+    const clinic = servicesCache.find(s => s.id === id);
+    return clinic ? clinic.name : `Klinik ID ${id}`;
+}
+
+
+// --- DATA FETCHING & INITIALIZATION ---
+async function fetchAllAdminData() {
+    try {
+        // Fetch Clinics (as Services)
+        servicesCache = await apiRequest('/clinics/'); 
+        // Fetch Doctors
+        doctorsCache = await apiRequest('/doctors/'); 
+        
+        renderServiceTable();
+        renderDoctorTable();
+        renderRegistrationServiceOptions();
+        renderClinicSelectOptions();
+        
+    } catch(error) {
+        console.error("Gagal memuat data admin:", error);
+    }
+}
+async function fetchDashboardData() {
+    // This endpoint is conceptual, but we'll simulate it by fetching all visits and grouping.
+    // Given the backend complexity, we'll only fetch the list of clinics/services here.
+    try {
+        const grid = document.getElementById('dashboard-grid');
+        grid.innerHTML = '<p class="text-gray-500 col-span-full text-center">Memuat data...</p>';
+
+        const clinics = await apiRequest('/clinics/');
+        grid.innerHTML = '';
+
+        if (clinics.length === 0) {
+            grid.innerHTML = '<p class="text-gray-500 col-span-full text-center">Belum ada data klinik untuk ditampilkan.</p>';
+            return;
+        }
+        
+        // Fetch all visits for today to calculate density (approximation)
+        const today = new Date().toISOString().split('T')[0];
+        const allVisits = await apiRequest(`/visits/?date_filter=${today}`);
+
+        clinics.forEach(clinic => {
+            const doctorsInClinic = doctorsCache.filter(d => d.clinic_id === clinic.id);
+            const doctorsCount = doctorsInClinic.length;
+            const maxPatientsTotal = doctorsInClinic.reduce((sum, d) => sum + 20, 0); // Assuming 20 max_patients per doctor for this simulation
+            
+            const clinicVisits = allVisits.filter(v => 
+                doctorsInClinic.some(d => d.id === v.doctor_id)
+            );
+            
+            const totalPatientsToday = clinicVisits.length;
+            const patientsWaiting = clinicVisits.filter(v => v.status === 'waiting').length;
+            const patientsServing = clinicVisits.filter(v => v.status === 'in_progress').length;
+            
+            const density = maxPatientsTotal > 0 ? (totalPatientsToday / maxPatientsTotal) * 100 : 0;
+            const percentage = Math.round(density > 100 ? 100 : density);
+            
+            let color = percentage > 75 ? 'red' : percentage > 50 ? 'yellow' : 'green';
+            
+            grid.innerHTML += `<div class="bg-white p-5 rounded-lg shadow card-hover transition-all duration-300">
+                <div class="flex justify-between items-start"><h3 class="font-bold text-lg text-gray-800">${clinic.name}</h3><i class="fas fa-clinic-medical text-gray-300 text-2xl"></i></div>
+                <p class="text-sm text-gray-500">${doctorsCount} Dokter Bertugas</p>
+                <div class="my-4">
+                    <div class="flex justify-between items-center text-sm mb-1">
+                        <span class="font-semibold">Kepadatan</span>
+                        <span class="font-bold text-${color}-600">${percentage}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div class="bg-${color}-500 h-2.5 rounded-full" style="width: ${percentage}%"></div>
+                    </div>
+                </div>
+                <div class="text-sm space-y-2 text-gray-700">
+                    <div class="flex justify-between"><span>Total Pasien:</span> <span class="font-semibold">${totalPatientsToday}</span></div>
+                    <div class="flex justify-between"><span>Menunggu:</span> <span class="font-semibold text-yellow-600">${patientsWaiting}</span></div>
+                    <div class="flex justify-between"><span>Dilayani:</span> <span class="font-semibold text-blue-600">${patientsServing}</span></div>
+                </div>
+            </div>`;
+        });
+    } catch (error) {}
+}
 
 
 // --- VIEW SWITCHING ---
@@ -223,51 +372,32 @@ function switchView(viewName) {
     document.getElementById(`${viewName}-view`).classList.add('active');
     document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active-tab'));
     document.querySelector(`.tab-button[data-view="${viewName}"]`).classList.add('active-tab');
+    
     if (viewName === 'public') {
-        const firstClinicId = document.querySelector('#clinic-select option')?.value;
-        if(firstClinicId) fetchQueueForClinic(firstClinicId);
+        // Automatically select the first clinic for public view
+        const firstClinicId = document.querySelector('#clinic-select option:not([value=""])')?.value;
+        if(firstClinicId) {
+            document.getElementById('clinic-select').value = firstClinicId;
+            fetchQueueForClinic(firstClinicId);
+        }
+    } else if (viewName === 'dashboard') {
+        fetchDashboardData();
     }
 }
 
-// --- DASHBOARD ---
-async function fetchDashboardData() {
-    try {
-        const data = await apiRequest('/admin/dashboard');
-        const grid = document.getElementById('dashboard-grid');
-        grid.innerHTML = '';
-        if (data.length === 0) {
-            grid.innerHTML = '<p class="text-gray-500 col-span-full text-center">Belum ada data klinik untuk ditampilkan.</p>';
-            return;
-        }
-        data.forEach(clinic => {
-            const percentage = Math.round(clinic.density_percentage);
-            let color = percentage > 75 ? 'red' : percentage > 50 ? 'yellow' : 'green';
-            grid.innerHTML += `<div class="bg-white p-5 rounded-lg shadow card-hover transition-all duration-300">
-                <div class="flex justify-between items-start"><h3 class="font-bold text-lg text-gray-800">${clinic.service_name}</h3><i class="fas fa-clinic-medical text-gray-300 text-2xl"></i></div>
-                <p class="text-sm text-gray-500">${clinic.doctors_count} Dokter Bertugas</p>
-                <div class="my-4"><div class="flex justify-between items-center text-sm mb-1"><span class="font-semibold">Kepadatan</span><span class="font-bold text-${color}-600">${percentage}%</span></div><div class="w-full bg-gray-200 rounded-full h-2.5"><div class="bg-${color}-500 h-2.5 rounded-full" style="width: ${percentage}%"></div></div></div>
-                <div class="text-sm space-y-2 text-gray-700"><div class="flex justify-between"><span>Total Pasien:</span> <span class="font-semibold">${clinic.total_patients_today} / ${clinic.max_patients_total}</span></div><div class="flex justify-between"><span>Menunggu:</span> <span class="font-semibold text-yellow-600">${clinic.patients_waiting}</span></div><div class="flex justify-between"><span>Dilayani:</span> <span class="font-semibold text-blue-600">${clinic.patients_serving}</span></div></div>
-            </div>`;
-        });
-    } catch (error) {}
-}
 
-
-// --- ADMIN: SERVICES ---
+// --- ADMIN: SERVICES/CLINICS ---
 function renderServiceTable() {
     const container = document.getElementById('service-table-body');
     container.innerHTML = '';
     if(servicesCache.length === 0) {
-        container.innerHTML = `<div class="text-center py-8 text-gray-500">Belum ada layanan yang ditambahkan.</div>`;
+        container.innerHTML = `<div class="text-center py-8 text-gray-500">Belum ada layanan (klinik) yang ditambahkan.</div>`;
         return;
     }
     servicesCache.forEach(s => {
         container.innerHTML += `
             <div class="flex items-center px-4 py-3 hover:bg-gray-50">
-                <div class="flex-1 font-medium text-gray-800">${s.name}</div>
-                <div class="w-20 flex justify-center">
-                    <span class="font-mono bg-gray-200 text-gray-700 text-xs font-bold w-8 h-8 flex items-center justify-center rounded-full">${s.prefix}</span>
-                </div>
+                <div class="flex-1 font-medium text-gray-800">${s.name}<div class="text-xs text-gray-500">${s.location || 'N/A'}</div></div>
                 <div class="w-24 text-right text-sm font-medium">
                     <button onclick="openServiceModal(${s.id})" class="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
                     <button onclick="confirmDeleteService(${s.id})" class="text-red-600 hover:text-red-800">Hapus</button>
@@ -282,12 +412,12 @@ function openServiceModal(serviceId = null) {
     const modalTitle = document.getElementById('service-modal-title');
     if (serviceId) {
         const service = servicesCache.find(s => s.id === serviceId);
-        modalTitle.textContent = 'Edit Layanan';
+        modalTitle.textContent = 'Edit Layanan (Klinik)';
         document.getElementById('service-id').value = service.id;
         document.getElementById('service-name').value = service.name;
-        document.getElementById('service-prefix').value = service.prefix;
+        document.getElementById('service-location').value = service.location;
     } else {
-        modalTitle.textContent = 'Tambah Layanan';
+        modalTitle.textContent = 'Tambah Layanan (Klinik)';
     }
     document.getElementById('service-modal').classList.remove('hidden');
 }
@@ -295,27 +425,29 @@ function closeServiceModal() { document.getElementById('service-modal').classLis
 async function handleServiceFormSubmit(event) {
     event.preventDefault();
     const serviceId = document.getElementById('service-id').value;
-    const serviceData = { name: document.getElementById('service-name').value, prefix: document.getElementById('service-prefix').value.toUpperCase() };
+    const serviceData = { name: document.getElementById('service-name').value, location: document.getElementById('service-location').value };
     try {
         if (serviceId) {
-            await apiRequest(`/admin/services/${serviceId}`, 'PUT', serviceData);
-            showToast('Layanan berhasil diperbarui.');
+            await apiRequest(`/clinics/${serviceId}`, 'PUT', serviceData);
+            showToast('Klinik berhasil diperbarui.');
         } else {
-            await apiRequest('/admin/services/', 'POST', serviceData);
-            showToast('Layanan berhasil ditambahkan.');
+            await apiRequest('/clinics/', 'POST', serviceData);
+            showToast('Klinik berhasil ditambahkan.');
         }
         closeServiceModal();
         fetchAllAdminData();
+        fetchDashboardData();
     } catch(error) {}
 }
 function confirmDeleteService(serviceId) {
-    openConfirmModal('Hapus Layanan?', 'Menghapus layanan juga akan menghapus dokter yang HANYA bertugas di sini. Anda yakin?', () => deleteService(serviceId));
+    openConfirmModal('Hapus Klinik?', 'Menghapus klinik akan me-null-kan `clinic_id` pada dokter terkait. Anda yakin?', () => deleteService(serviceId));
 }
 async function deleteService(serviceId) {
     try {
-        await apiRequest(`/admin/services/${serviceId}`, 'DELETE');
-        showToast('Layanan berhasil dihapus.');
+        await apiRequest(`/clinics/${serviceId}`, 'DELETE');
+        showToast('Klinik berhasil dihapus.');
         fetchAllAdminData();
+        fetchDashboardData();
     } catch(error) {}
 }
 
@@ -323,25 +455,20 @@ async function deleteService(serviceId) {
 function renderDoctorTable() {
     const container = document.getElementById('doctor-table-body');
     container.innerHTML = '';
-     if(doctorsCache.length === 0) {
+    if(doctorsCache.length === 0) {
         container.innerHTML = `<div class="text-center py-8 text-gray-500">Belum ada dokter yang ditambahkan.</div>`;
         return;
     }
     doctorsCache.forEach(d => {
-        const serviceNames = d.services.map(id => {
-            const service = servicesCache.find(s => s.id === id);
-            return service ? service.name : '';
-        }).filter(Boolean).join(', ');
+        const clinicName = getClinicNameById(d.clinic_id);
 
         container.innerHTML += `
             <div class="flex items-center px-4 py-3 hover:bg-gray-50">
                 <div class="flex-1">
-                    <div class="font-medium text-gray-800">${d.name}</div>
-                    <div class="text-xs text-gray-500">Kode: ${d.doctor_code}</div>
-                    <div class="text-xs text-blue-600 mt-1 font-semibold">${serviceNames}</div>
+                    <div class="font-medium text-gray-800">Dr. ${d.name}</div>
+                    <div class="text-xs text-gray-500">${d.specialization || 'Umum'}</div>
                 </div>
-                <div class="w-28 text-center text-sm text-gray-600">${d.practice_start_time.slice(0,5)} - ${d.practice_end_time.slice(0,5)}</div>
-                <div class="w-16 text-center text-sm text-gray-600">${d.max_patients}</div>
+                <div class="w-28 text-center text-sm text-blue-600 font-semibold">${clinicName}</div>
                 <div class="w-24 text-right text-sm font-medium">
                     <button onclick="openDoctorModal(${d.id})" class="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
                     <button onclick="confirmDeleteDoctor(${d.id})" class="text-red-600 hover:text-red-800">Hapus</button>
@@ -350,11 +477,17 @@ function renderDoctorTable() {
         `;
     });
 }
-function renderDoctorServiceOptions(selectedServices = []) {
-    const container = document.getElementById('doctor-service-options');
-    container.innerHTML = '';
-    servicesCache.forEach(service => {
-        container.innerHTML += `<label class="flex items-center space-x-2"><input type="checkbox" name="doctor-services" value="${service.id}" ${selectedServices.includes(service.id) ? 'checked' : ''} class="form-checkbox h-5 w-5 text-blue-600"><span>${service.name}</span></label>`;
+function renderDoctorClinicOptions(selectedClinicId = null) {
+    const select = document.getElementById('doctor-clinic-id');
+    select.innerHTML = '<option value="">-- Pilih Klinik --</option>';
+    servicesCache.forEach(clinic => {
+        const option = document.createElement('option');
+        option.value = clinic.id;
+        option.textContent = clinic.name;
+        if (selectedClinicId && clinic.id == selectedClinicId) {
+            option.selected = true;
+        }
+        select.appendChild(option);
     });
 }
 function openDoctorModal(doctorId = null) {
@@ -366,14 +499,11 @@ function openDoctorModal(doctorId = null) {
         modalTitle.textContent = 'Edit Dokter';
         document.getElementById('doctor-id').value = doctor.id;
         document.getElementById('doctor-name').value = doctor.name;
-        document.getElementById('doctor-code').value = doctor.doctor_code;
-        document.getElementById('practice-start-time').value = doctor.practice_start_time;
-        document.getElementById('practice-end-time').value = doctor.practice_end_time;
-        document.getElementById('max-patients').value = doctor.max_patients;
-        renderDoctorServiceOptions(doctor.services);
+        document.getElementById('doctor-specialization').value = doctor.specialization;
+        renderDoctorClinicOptions(doctor.clinic_id);
     } else {
         modalTitle.textContent = 'Tambah Dokter';
-        renderDoctorServiceOptions();
+        renderDoctorClinicOptions();
     }
     document.getElementById('doctor-modal').classList.remove('hidden');
 }
@@ -381,15 +511,20 @@ function closeDoctorModal() { document.getElementById('doctor-modal').classList.
 async function handleDoctorFormSubmit(event) {
     event.preventDefault();
     const doctorId = document.getElementById('doctor-id').value;
-    const selectedServices = Array.from(document.querySelectorAll('input[name="doctor-services"]:checked')).map(el => parseInt(el.value));
-    if (selectedServices.length === 0) { showToast('Dokter harus menangani setidaknya satu layanan.', true); return; }
-    const doctorData = { name: document.getElementById('doctor-name').value, doctor_code: document.getElementById('doctor-code').value, practice_start_time: document.getElementById('practice-start-time').value, practice_end_time: document.getElementById('practice-end-time').value, max_patients: parseInt(document.getElementById('max-patients').value), services: selectedServices };
+    
+    const doctorData = { 
+        name: document.getElementById('doctor-name').value, 
+        specialization: document.getElementById('doctor-specialization').value, 
+        clinic_id: parseInt(document.getElementById('doctor-clinic-id').value),
+        is_active: true // Asumsi default true
+    };
+    
     try {
         if (doctorId) {
-            await apiRequest(`/admin/doctors/${doctorId}`, 'PUT', doctorData);
+            await apiRequest(`/doctors/${doctorId}`, 'PUT', doctorData);
             showToast('Data dokter berhasil diperbarui.');
         } else {
-            await apiRequest('/admin/doctors/', 'POST', doctorData);
+            await apiRequest('/doctors/', 'POST', doctorData);
             showToast('Dokter baru berhasil ditambahkan.');
         }
         closeDoctorModal();
@@ -401,80 +536,164 @@ function confirmDeleteDoctor(doctorId) {
 }
 async function deleteDoctor(doctorId) {
     try {
-        await apiRequest(`/admin/doctors/${doctorId}`, 'DELETE');
+        await apiRequest(`/doctors/${doctorId}`, 'DELETE');
         showToast('Dokter berhasil dihapus.');
         fetchAllAdminData();
     } catch(error) {}
 }
 
 
-// --- PATIENT REGISTRATION ---
+// --- PATIENT REGISTRATION & QR CODE (NEW) ---
 function renderRegistrationServiceOptions() {
     const container = document.getElementById('service-options-container');
     container.innerHTML = '';
     if (servicesCache.length === 0) {
-        container.innerHTML = '<p class="text-gray-500">Memuat layanan...</p>';
+        container.innerHTML = '<p class="text-gray-500">Belum ada layanan yang tersedia. Silakan buat di tab Manajemen Admin.</p>';
         return;
     }
     servicesCache.forEach(service => {
-        const option = `<label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-50">
-            <input type="radio" name="registration-services" onchange="showDoctorChoicesForService(${service.id})" value="${service.id}" class="form-radio h-5 w-5 text-blue-600">
-            <span>${service.name}</span>
+        const option = `<label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-50 cursor-pointer">
+            <input type="radio" name="registration-services" onchange="showDoctorChoicesForService(${service.id})" value="${service.id}" class="form-radio h-5 w-5 text-blue-600" required>
+            <span>${service.name} (${service.location || 'N/A'})</span>
         </label>`;
         container.innerHTML += option;
     });
 }
-async function showDoctorChoicesForService(serviceId) {
+function showDoctorChoicesForService(clinicId) {
     const doctorChoiceContainer = document.getElementById('doctor-choice-container');
     const doctorOptionsContainer = document.getElementById('doctor-options-container');
-    doctorOptionsContainer.innerHTML = '<p class="text-gray-500">Memuat dokter...</p>';
+    doctorOptionsContainer.innerHTML = '<p class="text-gray-500">Mencari dokter yang aktif...</p>';
     doctorChoiceContainer.classList.remove('hidden');
 
-    try {
-        const availableDoctors = await apiRequest(`/services/${serviceId}/available-doctors`);
-        doctorOptionsContainer.innerHTML = '';
-        if (availableDoctors.length > 0) {
-            availableDoctors.forEach(doctor => {
-                doctorOptionsContainer.innerHTML += `<label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100">
-                    <input type="radio" name="registration-doctor" value="${doctor.id}" class="form-radio h-5 w-5 text-blue-600" required>
-                    <span>${doctor.name} (Sisa Kuota: ${doctor.remaining_quota})</span>
-                </label>`;
-            });
-        } else {
-             doctorOptionsContainer.innerHTML = '<p class="text-yellow-600">Tidak ada dokter yang tersedia untuk layanan ini saat ini.</p>';
-        }
-    } catch (error) {
-        doctorOptionsContainer.innerHTML = `<p class="text-red-600">${error.message}</p>`;
+    const availableDoctors = doctorsCache.filter(d => d.clinic_id == clinicId && d.is_active);
+    doctorOptionsContainer.innerHTML = '';
+    
+    if (availableDoctors.length > 0) {
+        availableDoctors.forEach(doctor => {
+            // Note: Remaining quota check is removed as it's a backend feature not exposed via simple API
+            doctorOptionsContainer.innerHTML += `<label class="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-100 cursor-pointer">
+                <input type="radio" name="registration-doctor" value="${doctor.id}" class="form-radio h-5 w-5 text-blue-600" required>
+                <span>Dr. ${doctor.name} (${doctor.specialization || 'Umum'})</span>
+            </label>`;
+        });
+    } else {
+        doctorOptionsContainer.innerHTML = '<p class="text-yellow-600">Tidak ada dokter yang aktif untuk klinik ini saat ini.</p>';
     }
 }
+
+document.getElementById('registration-form').addEventListener('submit', handleRegistrationFormSubmit);
+
 async function handleRegistrationFormSubmit(event) {
     event.preventDefault();
-    const selectedServiceRadio = document.querySelector('input[name="registration-services"]:checked');
-    if (!selectedServiceRadio) { showToast('Silakan pilih layanan terlebih dahulu.', true); return; }
-    
-    const selectedDoctorRadio = document.querySelector('input[name="registration-doctor"]:checked');
-    if (!selectedDoctorRadio) { showToast('Silakan pilih dokter terlebih dahulu.', true); return; }
 
-    const registrationData = {
-        patient_name: document.getElementById('patient-name').value,
-        service_ids: [parseInt(selectedServiceRadio.value)],
-        doctor_id: parseInt(selectedDoctorRadio.value)
+    const selectedServiceRadio = document.querySelector('input[name="registration-services"]:checked');
+    const selectedDoctorRadio = document.querySelector('input[name="registration-doctor"]:checked');
+
+    if (!selectedServiceRadio || !selectedDoctorRadio) {
+        showToast('Silakan pilih Layanan dan Dokter.', true);
+        return;
+    }
+
+    const patientData = {
+        name: document.getElementById('patient-name').value,
+        nik: document.getElementById('patient-nik').value,
+        dob: document.getElementById('patient-dob').value,
+        gender: document.getElementById('patient-gender').value,
+        phone: document.getElementById('patient-phone').value || null,
+        age: 0 // Age is optional/calculated in the backend
     };
+
+    const doctorId = parseInt(selectedDoctorRadio.value);
+    const clinicId = parseInt(selectedServiceRadio.value);
     
     try {
-        const response = await apiRequest('/register', 'POST', registrationData);
-        showToast(`Pendaftaran untuk ${response.patient.name} berhasil! Nomor antrean: ${response.tickets[0].queue_number}`);
+        // --- 1. Register Patient (POST /patients/) ---
+        // We attempt to create a new patient. If NIK is unique, it succeeds.
+        // If NIK is NOT unique (patient already exists), the backend will likely return a 409 or 422.
+        // We will then assume the user is trying to re-register an existing patient, 
+        // but for simplicity, we rely on the error handling here. 
+        // In a perfect system, we would first do a GET by NIK.
+        
+        const patientResponse = await apiRequest('/patients/', 'POST', patientData);
+        const patientId = patientResponse.id;
+        const patientName = patientResponse.name;
+
+        // --- 2. Register Visit (POST /visits/) ---
+        const today = new Date().toISOString().split('T')[0];
+        const visitData = {
+            patient_id: patientId,
+            doctor_id: doctorId,
+            date_visit: today
+        };
+
+        const visitResponse = await apiRequest('/visits/', 'POST', visitData);
+        
+        // --- 3. Generate QR Code and Display ---
+        const clinic = servicesCache.find(s => s.id === clinicId);
+        const queueNumber = visitResponse.queue_number;
+        const doctorName = getDoctorNameById(doctorId);
+        const clinicPrefix = clinic.name.charAt(0).toUpperCase();
+        const formattedQueueNumber = `${clinicPrefix}${String(queueNumber).padStart(3, '0')}`;
+
+        // Display data in modal
+        document.getElementById('qr-queue-number').textContent = formattedQueueNumber;
+        document.getElementById('qr-patient-name').textContent = patientName;
+        document.getElementById('qr-doctor-name').textContent = doctorName;
+        document.getElementById('qr-visit-date').textContent = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        // Generate QR Code content (JSON string)
+        const qrText = JSON.stringify({
+            visit_id: visitResponse.id,
+            queue: formattedQueueNumber,
+            patient: patientName,
+            doctor: doctorName,
+            date: today
+        });
+
+        const qrContainer = document.getElementById('qrcode-container');
+        qrContainer.innerHTML = ''; // Clear previous QR
+
+        if (typeof QRCode !== 'undefined') {
+            new QRCode(qrContainer, {
+                text: qrText,
+                width: 160,
+                height: 160,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        }
+
+        // Show the result modal
+        document.getElementById('qrcode-result-modal').classList.remove('hidden');
+
+        // Reset form and update dashboards
         document.getElementById('registration-form').reset();
         document.getElementById('doctor-choice-container').classList.add('hidden');
         fetchDashboardData();
-    } catch(error) {}
+        showToast(`Pendaftaran berhasil! Nomor antrean: ${formattedQueueNumber}`);
+
+    } catch(error) {
+         // The error block handles both patient creation and visit creation failures
+         showToast(`Gagal mendaftar: ${error.message}`, true);
+    }
 }
 
 
 // --- PUBLIC QUEUE VIEW ---
-async function updateQueueStatus(queueId, newStatus) {
+function renderClinicSelectOptions() {
+    const select = document.getElementById('clinic-select');
+    select.innerHTML = '<option value="">-- Pilih Klinik --</option>';
+    servicesCache.forEach(clinic => {
+        const option = document.createElement('option');
+        option.value = clinic.id;
+        option.textContent = clinic.name;
+        select.appendChild(option);
+    });
+}
+async function updateQueueStatus(visitId, newStatus) {
     try {
-        await apiRequest(`/queues/${queueId}/status`, 'PUT', { status: newStatus });
+        await apiRequest(`/visits/${visitId}/status`, 'PUT', { status: newStatus });
         showToast(`Status antrean berhasil diubah ke '${newStatus}'.`);
         fetchDashboardData();
         const selectedClinicId = document.getElementById('clinic-select').value;
@@ -484,104 +703,102 @@ async function updateQueueStatus(queueId, newStatus) {
     } catch (error) {}
 }
 
-async function fetchQueueForClinic(serviceId) {
+async function fetchQueueForClinic(clinicId) {
     const clinicNameH2 = document.getElementById('queue-clinic-name');
     const queueDateP = document.getElementById('queue-date');
     const queueTableBody = document.getElementById('queue-table-body');
     queueTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Memuat antrean...</td></tr>';
     
-    if (!serviceId) {
+    if (!clinicId) {
         clinicNameH2.textContent = 'Pilih sebuah klinik';
         queueDateP.textContent = '';
         queueTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Silakan pilih klinik dari daftar di atas.</td></tr>';
         return;
     }
     
-    const service = servicesCache.find(s => s.id == serviceId);
-    clinicNameH2.textContent = `Antrean ${service.name}`;
+    const clinic = servicesCache.find(s => s.id == clinicId);
+    if (!clinic) return; // Should not happen
+    
+    clinicNameH2.textContent = `Antrean ${clinic.name}`;
     queueDateP.textContent = `Tanggal Kunjungan: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
 
     try {
-        const allQueues = await apiRequest(`/queues/${serviceId}`);
+        // Fetch all visits for today
+        const today = new Date().toISOString().split('T')[0];
+        const allVisits = await apiRequest(`/visits/?date_filter=${today}`);
+        
+        // Filter visits to only show those for doctors in the selected clinic
+        const clinicDoctorsIds = doctorsCache.filter(d => d.clinic_id == clinicId).map(d => d.id);
+        const clinicQueues = allVisits.filter(q => clinicDoctorsIds.includes(q.doctor_id));
+
         queueTableBody.innerHTML = '';
         
-        if (allQueues.length === 0) {
-            queueTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Tidak ada antrean untuk ditampilkan.</td></tr>';
+        if (clinicQueues.length === 0) {
+            queueTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Tidak ada antrean untuk ditampilkan hari ini.</td></tr>';
             return;
         }
+        
+        const clinicPrefix = clinic.name.charAt(0).toUpperCase();
 
-        allQueues.forEach(q => {
+        clinicQueues.forEach(q => {
             let statusClass, statusText, actionButton;
 
             switch(q.status) {
-                case 'menunggu':
+                case 'waiting':
                     statusClass = 'bg-yellow-100 text-yellow-800';
                     statusText = 'Menunggu';
-                    actionButton = `<button onclick="updateQueueStatus(${q.id}, 'sedang dilayani')" class="bg-blue-500 text-white px-3 py-1 text-xs rounded-full hover:bg-blue-600">Layani</button>`;
+                    actionButton = `<button onclick="updateQueueStatus(${q.id}, 'in_progress')" class="bg-blue-500 text-white text-xs font-semibold py-1 px-2 rounded hover:bg-blue-600"><i class="fas fa-play mr-1"></i>Panggil</button>`;
                     break;
-                case 'sedang dilayani':
+                case 'in_progress':
                     statusClass = 'bg-blue-100 text-blue-800';
                     statusText = 'Dilayani';
-                    actionButton = `<button onclick="updateQueueStatus(${q.id}, 'selesai')" class="bg-green-500 text-white px-3 py-1 text-xs rounded-full hover:bg-green-600">Selesai</button>`;
+                    actionButton = `<button onclick="updateQueueStatus(${q.id}, 'completed')" class="bg-green-500 text-white text-xs font-semibold py-1 px-2 rounded hover:bg-green-600"><i class="fas fa-check mr-1"></i>Selesai</button>`;
                     break;
-                case 'selesai':
-                    statusClass = 'bg-gray-100 text-gray-500';
+                case 'completed':
+                    statusClass = 'bg-green-100 text-green-800';
                     statusText = 'Selesai';
-                    actionButton = `<span class="text-gray-400 text-xs">Selesai</span>`;
+                    actionButton = '-';
                     break;
+                case 'cancelled':
+                    statusClass = 'bg-red-100 text-red-800';
+                    statusText = 'Batal';
+                    actionButton = '-';
+                    break;
+                default:
+                    statusClass = 'bg-gray-100 text-gray-800';
+                    statusText = 'Tidak Diketahui';
+                    actionButton = '-';
             }
             
-            const row = `
-                <tr class="${q.status === 'selesai' ? 'opacity-50' : ''}">
-                    <td class="py-4 px-4 font-mono font-bold text-lg">${q.queue_id_display}</td>
-                    <td class="py-4 px-4 text-sm text-gray-500">${new Date(q.registration_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
-                    <td class="py-4 px-4">
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">${statusText}</span>
+            // Assume q object has patient and doctor details due to join in backend (like in the previous solution)
+            const patientName = q.patient?.name || `ID Pasien ${q.patient_id}`; 
+            const formattedQueueNumber = `${clinicPrefix}${String(q.queue_number).padStart(3, '0')}`;
+            
+            queueTableBody.innerHTML += `
+                <tr class="hover:bg-gray-50">
+                    <td class="py-3 px-4 whitespace-nowrap">
+                        <span class="font-bold text-lg text-blue-700">${formattedQueueNumber}</span>
+                        <br>
+                        <span class="text-xs text-gray-500">${patientName}</span>
                     </td>
-                    <td class="py-4 px-4 text-right">${actionButton}</td>
+                    <td class="py-3 px-4 whitespace-nowrap text-sm text-gray-500">${new Date(q.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td class="py-3 px-4 whitespace-nowrap"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">${statusText}</span></td>
+                    <td class="py-3 px-4 whitespace-nowrap text-right">${actionButton}</td>
                 </tr>
             `;
-            queueTableBody.innerHTML += row;
         });
-    } catch (error) {}
-}
-
-// --- INITIALIZATION ---
-async function fetchAllAdminData() {
-    try {
-        const [services, doctors] = await Promise.all([apiRequest('/admin/services/'), apiRequest('/admin/doctors/')]);
-        servicesCache = services;
-        doctorsCache = doctors;
-        
-        renderServiceTable();
-        renderDoctorTable();
-        renderRegistrationServiceOptions();
-        
-        const clinicSelect = document.getElementById('clinic-select');
-        clinicSelect.innerHTML = '<option value="">-- Pilih Klinik --</option>';
-        servicesCache.forEach(s => clinicSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`);
     } catch (error) {
-        // Error sudah ditangani oleh apiRequest
+        queueTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-red-500">Gagal memuat antrean: ${error.message}</td></tr>`;
     }
 }
 
+
+// --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     fetchAllAdminData();
     fetchDashboardData();
-    
-    setInterval(fetchDashboardData, 5000); 
-    setInterval(() => {
-        if (document.getElementById('public-view').classList.contains('active')) {
-            const selectedClinicId = document.getElementById('clinic-select').value;
-            if (selectedClinicId) fetchQueueForClinic(selectedClinicId);
-        }
-    }, 5000);
-    
-    document.getElementById('service-form').addEventListener('submit', handleServiceFormSubmit);
-    document.getElementById('doctor-form').addEventListener('submit', handleDoctorFormSubmit);
-    document.getElementById('registration-form').addEventListener('submit', handleRegistrationFormSubmit);
 });
 </script>
+
 </body>
 </html>
-

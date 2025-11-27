@@ -1,3 +1,4 @@
+
 # 🏥 Sistem Manajemen Antrean Pasien Rumah Sakit (FastAPI)
 
 Proyek ini adalah implementasi sistem *Manajemen Antrean Pasien* berbasis *API* yang dibangun menggunakan framework *FastAPI* yang cepat dan modern. Sistem ini dirancang untuk mempermudah proses pendaftaran pasien, pengelolaan alur antrean oleh staf medis, serta pencatatan riwayat kunjungan di lingkungan rumah sakit.
