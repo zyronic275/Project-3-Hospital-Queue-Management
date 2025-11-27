@@ -43,3 +43,5 @@ Penting untuk dicatat bahwa proyek ini adalah implementasi API dasar untuk tujua
 
 * *Data Non-Persistent: **Tidak menggunakan database relasional* atau NoSQL. Data *hanya disimpan sementara* menggunakan struktur data sederhana (list dan dictionary) selama server berjalan. *Data akan hilang* setelah server dihentikan.
 * *Tanpa Autentikasi: **Tidak mengimplementasikan mekanisme autentikasi* (seperti JWT atau Basic Auth) untuk menjaga fokus pada alur bisnis inti manajemen antrean.
+
+Untuk menjalankan project: uvicorn main:app --reload
