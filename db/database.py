@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 DB_USER = "root"
 DB_PASSWORD = "abel0908"
 DB_HOST = "localhost"
-DB_PORT = "8000"
+DB_PORT = "3360"
 DB_NAME = "hospital_db"
 
 SERVER_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}"
