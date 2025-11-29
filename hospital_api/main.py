@@ -1,37 +1,28 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, HTTPException, APIRouter
 from sqlalchemy.orm import Session
-from typing import List, Optional
-import datetime
 from sqlalchemy import func
+from typing import List
+from datetime import datetime, date, time
+import pandas as pd
+import numpy as np
 
-# Local imports
+# Import modul lokal
 import storage
 import schemas
-from migrate import seed_data # Import fungsi seed baru kita
+import csv_utils
 
-# Inisialisasi Database Tables
+# Init Database
 storage.init_db()
 
-app = FastAPI(
-    title="Hospital Queue API (Random Import)",
-    version="2.2.0"
-)
+app = FastAPI(title="Sistem Manajemen Antrean RS Terintegrasi")
 
-router_public = APIRouter(tags=["Public Info & Registration"])
-router_admin_services = APIRouter(prefix="/admin/services", tags=["Admin: Services"])
-router_admin_doctors = APIRouter(prefix="/admin/doctors", tags=["Admin: Doctors"])
-router_monitoring = APIRouter(prefix="/admin", tags=["Admin: Monitoring"])
-router_data = APIRouter(prefix="/admin/data", tags=["Admin: Data Import"]) # Router baru
+# Setup Router
+router_admin = APIRouter(prefix="/admin", tags=["Admin: Manajemen Data"])
+router_public = APIRouter(prefix="/public",tags=["Public: Pendaftaran"])
+router_ops = APIRouter(prefix="/ops", tags=["Medical Staff: Operasional"])
+router_monitor = APIRouter(prefix="/monitor", tags=["Admin: Monitoring & Dashboard"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# Dependency Database
 def get_db():
     db = storage.SessionLocal()
     try:
@@ -39,194 +30,304 @@ def get_db():
     finally:
         db.close()
 
-# =================================================================
-# NEW ENDPOINT FOR RANDOM DATA IMPORT (POIN 2)
-# =================================================================
-
-@router_data.get("/seed-random", summary="Import Random Data from CSV")
-def import_random_data_endpoint(
-    count: int = Query(..., description="Jumlah baris data yang ingin digenerate secara random dari CSV", ge=1),
-    db: Session = Depends(get_db)
-):
-    """
-    Endpoint ini memenuhi Poin 2:
-    Mengambil data dari file CSV secara acak sejumlah `count` dan memasukkannya ke database via ORM.
-    """
+# --- HELPER: Parsing Waktu Pintar ---
+def parse_datetime_smart(date_val, time_val=None):
+    if pd.isna(date_val) or str(date_val).strip() == "": return None
     try:
-        result = seed_data(db, count)
-        return {
-            "status": "success",
-            "message": "Data imported successfully",
-            "details": result
-        }
+        d_obj = pd.to_datetime(str(date_val)).date()
+        if pd.isna(time_val) or str(time_val).strip() == "": return datetime.combine(d_obj, time(0,0))
+        t_obj = pd.to_datetime(str(time_val).strip()).time()
+        return datetime.combine(d_obj, t_obj)
+    except: return None
+
+# =================================================================
+# 1. ADMIN: IMPORT DATA (CSV)
+# =================================================================
+@router_admin.get("/import-random-data")
+def import_random_data(count: int = 10, db: Session = Depends(get_db)):
+    try:
+        df = csv_utils.get_merged_random_data(count)
+        imported = 0
+        
+        for _, row in df.iterrows():
+            # A. Poli
+            poli_clean = str(row['poli']).strip()
+            if not poli_clean: continue
+            
+            poli_obj = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == poli_clean).first()
+            if not poli_obj:
+                poli_obj = storage.TabelPoli(poli=poli_clean, prefix=row.get('prefix', 'POL'))
+                db.add(poli_obj); db.commit()
+            
+            # B. Dokter
+            try: csv_doc_id = int(float(row['doctor_id']))
+            except: csv_doc_id = 0
+            
+            doc_obj = None
+            if csv_doc_id > 0: 
+                doc_obj = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == csv_doc_id).first()
+            
+            if not doc_obj:
+                final_doc_id = csv_doc_id if csv_doc_id > 0 else (db.query(storage.TabelDokter).count() + 1)
+                
+                # Format Code: PREFIX-ID
+                try: raw_code_num = int(float(row['doctor_code'])) if row['doctor_code'] else final_doc_id
+                except: raw_code_num = final_doc_id
+                formatted_doc_code = f"{poli_obj.prefix}-{raw_code_num:03d}"
+
+                try:
+                    t_start = pd.to_datetime(str(row['practice_start_time'])).time()
+                    t_end = pd.to_datetime(str(row['practice_end_time'])).time()
+                except: t_start, t_end = time(8,0), time(16,0)
+
+                doc_obj = storage.TabelDokter(
+                    doctor_id=final_doc_id, dokter=row['dokter'], poli=poli_clean,
+                    practice_start_time=t_start, practice_end_time=t_end,
+                    doctor_code=formatted_doc_code, max_patients=20
+                )
+                db.add(doc_obj); db.commit()
+
+            # C. Pelayanan
+            real_checkin = parse_datetime_smart(row['visit_date'], row['checkin_time'])
+            real_entry = parse_datetime_smart(row['visit_date'], row['clinic_entry_time'])
+            real_completion = parse_datetime_smart(row['visit_date'], row['completion_time'])
+            real_visit_date = real_checkin.date() if real_checkin else datetime.now().date()
+            
+            real_status = row['status_pelayanan']
+            if not real_status:
+                if real_completion: real_status = "Selesai"
+                elif real_entry: real_status = "Melayani"
+                else: real_status = "Menunggu"
+
+            # Ambil Sequence & String Queue
+            csv_queue_str = str(row['queue_number']) if row['queue_number'] else ""
+            try: real_seq = int(float(row['queue_sequence']))
+            except: real_seq = 999
+            
+            if not csv_queue_str or csv_queue_str == "nan":
+                 # Format ulang jika kosong
+                 doc_suffix = doc_obj.doctor_code.split('-')[-1]
+                 csv_queue_str = f"{poli_obj.prefix}-{doc_suffix}-{real_seq:03d}"
+
+            pelayanan = storage.TabelPelayanan(
+                nama_pasien=row['nama_pasien'] or "Pasien", poli=poli_clean, dokter=doc_obj.dokter,
+                doctor_id_ref=doc_obj.doctor_id, visit_date=real_visit_date,
+                checkin_time=real_checkin, clinic_entry_time=real_entry, completion_time=real_completion,
+                status_pelayanan=real_status, 
+                queue_number=csv_queue_str, 
+                queue_sequence=real_seq     
+            )
+            db.add(pelayanan)
+            
+            gabungan = storage.TabelGabungan(
+                nama_pasien=row['nama_pasien'] or "Pasien", poli=poli_clean, prefix_poli=poli_obj.prefix,
+                dokter=doc_obj.dokter, doctor_code=doc_obj.doctor_code, doctor_id=doc_obj.doctor_id,
+                visit_date=real_visit_date, checkin_time=real_checkin, clinic_entry_time=real_entry,
+                completion_time=real_completion, status_pelayanan=real_status,
+                queue_number=csv_queue_str, 
+                queue_sequence=real_seq     
+            )
+            db.add(gabungan)
+            imported += 1
+            
+        db.commit()
+        return {"message": f"Sukses import {imported} data."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback; traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 # =================================================================
-# PUBLIC ENDPOINTS
+# 2. ADMIN: MANAJEMEN POLI
 # =================================================================
 
-def time_to_seconds(t: datetime.time) -> int:
-    return t.hour * 3600 + t.minute * 60 + t.second
+@router_admin.post("/polis", response_model=schemas.PoliSchema)
+def create_poli(payload: schemas.PoliCreate, db: Session = Depends(get_db)):
+    clean_poli = payload.poli.strip()
+    clean_prefix = payload.prefix.strip().upper()
 
-@router_public.get("/services/{service_id}/available-doctors", response_model=List[schemas.DoctorSchema])
-def get_available_doctors(service_id: int, db: Session = Depends(get_db)):
-    service = db.query(storage.Service).filter(storage.Service.id == service_id).first()
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
-    return service.doctors
+    if db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == clean_poli).first():
+        raise HTTPException(400, f"Poli '{clean_poli}' sudah ada.")
+    if db.query(storage.TabelPoli).filter(storage.TabelPoli.prefix == clean_prefix).first():
+        raise HTTPException(400, f"Prefix '{clean_prefix}' sudah digunakan.")
 
-@router_public.get("/services", response_model=List[schemas.ServiceSchema])
-def get_services(db: Session = Depends(get_db)):
-    return db.query(storage.Service).all()
-
-@router_public.post("/register", response_model=schemas.RegistrationResponse)
-def register_patient(payload: schemas.RegistrationRequest, db: Session = Depends(get_db)):
-    # 1. Create/Get Patient
-    patient = db.query(storage.Patient).filter(storage.Patient.name == payload.patient_name).first()
-    if not patient:
-        patient = storage.Patient(
-            name=payload.patient_name,
-            date_of_birth=payload.date_of_birth
-        )
-        db.add(patient)
-        db.commit()
-        db.refresh(patient)
+    new_poli = storage.TabelPoli(poli=clean_poli, prefix=clean_prefix)
+    db.add(new_poli); db.commit(); db.refresh(new_poli)
     
-    tickets = []
+    try: csv_utils.append_to_csv("tabel_poli_normal.csv", {"poli": new_poli.poli, "prefix": new_poli.prefix})
+    except: pass
     
-    # 2. Process each service
-    for s_id in payload.service_ids:
-        service = db.query(storage.Service).filter(storage.Service.id == s_id).first()
-        if not service:
-            continue
-            
-        # Select Doctor (specific or random/first available)
-        doctor = None
-        if payload.doctor_id:
-             doctor = db.query(storage.Doctor).filter(storage.Doctor.id == payload.doctor_id).first()
-        
-        if not doctor:
-            # Auto-assign logic: pick first doctor in service
-            if service.doctors:
-                doctor = service.doctors[0]
-            else:
-                continue # No doctor available for this service
+    return new_poli
 
-        # Generate Queue Number
-        today = datetime.date.today()
-        count_today = db.query(storage.Queue).filter(
-            storage.Queue.doctor_id == doctor.id,
-            func.date(storage.Queue.registration_time) == today
-        ).count()
-        
-        queue_num = count_today + 1
-        q_display = f"{service.prefix}-{doctor.doctor_code}-{queue_num:04d}"
-        
-        new_queue = storage.Queue(
-            queue_id_display=q_display,
-            queue_number=queue_num,
-            patient_id=patient.id,
-            service_id=service.id,
-            doctor_id=doctor.id,
-            status="menunggu"
-        )
-        db.add(new_queue)
-        db.commit()
-        db.refresh(new_queue)
-        
-        tickets.append(schemas.Ticket(
-            service=service,
-            queue_number=q_display,
-            doctor=doctor
-        ))
-        
-    return schemas.RegistrationResponse(patient=patient, tickets=tickets)
+@router_admin.delete("/polis/{poli_name}")
+def delete_poli(poli_name: str, db: Session = Depends(get_db)):
+    poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == poli_name).first()
+    if not poli: raise HTTPException(404, "Poli tidak ditemukan")
 
-# =================================================================
-# ADMIN ENDPOINTS (SERVICES & DOCTORS)
-# =================================================================
+    doctors = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
+    for doc in doctors:
+        db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == doc.doctor_id).delete()
+        db.query(storage.TabelGabungan).filter(storage.TabelGabungan.doctor_id == doc.doctor_id).delete()
+        db.delete(doc)
 
-@router_admin_services.post("/", response_model=schemas.ServiceSchema)
-def create_service(service: schemas.ServiceCreate, db: Session = Depends(get_db)):
-    db_service = storage.Service(name=service.name, prefix=service.prefix)
-    db.add(db_service)
+    db.delete(poli)
     db.commit()
-    db.refresh(db_service)
-    return db_service
+    return {"message": f"Poli {poli_name} beserta dokter dan riwayatnya berhasil dihapus."}
 
-@router_admin_doctors.post("/", response_model=schemas.DoctorSchema)
-def create_doctor(doctor: schemas.DoctorCreate, db: Session = Depends(get_db)):
-    db_doctor = storage.Doctor(
-        doctor_code=doctor.doctor_code,
-        name=doctor.name,
-        practice_start_time=doctor.practice_start_time,
-        practice_end_time=doctor.practice_end_time,
-        max_patients=doctor.max_patients
+# =================================================================
+# 3. ADMIN: MANAJEMEN DOKTER
+# =================================================================
+
+@router_admin.post("/doctors", response_model=schemas.DoctorSchema)
+def add_doctor(payload: schemas.DoctorCreate, db: Session = Depends(get_db)):
+    # Cek Poli Wajib Ada
+    poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == payload.poli).first()
+    if not poli: raise HTTPException(404, f"Poli '{payload.poli}' tidak ditemukan. Buat poli dahulu.")
+    
+    # Auto ID
+    final_id = payload.doctor_id
+    if not final_id:
+        last = db.query(storage.TabelDokter).order_by(storage.TabelDokter.doctor_id.desc()).first()
+        final_id = (last.doctor_id + 1) if last else 1
+
+    # Auto Code (Cari ID terakhir di poli tersebut + 1)
+    last_doc_in_poli = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == payload.poli).order_by(storage.TabelDokter.doctor_id.desc()).first()
+    next_num = 1
+    if last_doc_in_poli:
+        try: next_num = int(last_doc_in_poli.doctor_code.split('-')[-1]) + 1
+        except: next_num = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == payload.poli).count() + 1
+            
+    new_code = f"{poli.prefix}-{next_num:03d}"
+    
+    try:
+        t_start = datetime.strptime(payload.practice_start_time, "%H:%M").time()
+        t_end = datetime.strptime(payload.practice_end_time, "%H:%M").time()
+    except: raise HTTPException(400, "Format waktu salah (HH:MM)")
+
+    new_doc = storage.TabelDokter(
+        doctor_id=final_id, dokter=payload.dokter, poli=payload.poli,
+        practice_start_time=t_start, practice_end_time=t_end,
+        doctor_code=new_code, max_patients=payload.max_patients
     )
+    db.add(new_doc); db.commit(); db.refresh(new_doc)
     
-    # Associate services
-    if doctor.services:
-        services = db.query(storage.Service).filter(storage.Service.id.in_(doctor.services)).all()
-        db_doctor.services = services
+    try:
+        csv_utils.append_to_csv("tabel_dokter_normal.csv", {
+            "dokter": new_doc.dokter, "doctor_id": new_doc.doctor_id,
+            "practice_start_time": payload.practice_start_time, "practice_end_time": payload.practice_end_time,
+            "doctor_code": new_code, "max_patients": new_doc.max_patients, "poli": new_doc.poli
+        })
+    except: pass
+    return new_doc
+
+@router_admin.put("/doctors/{doctor_id}", response_model=schemas.DoctorSchema)
+def update_doctor(doctor_id: int, payload: schemas.DoctorUpdate, db: Session = Depends(get_db)):
+    doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == doctor_id).first()
+    if not doc: raise HTTPException(404, "Dokter tidak ditemukan")
+    
+    if payload.dokter: doc.dokter = payload.dokter
+    if payload.max_patients: doc.max_patients = payload.max_patients
+    if payload.practice_start_time:
+        try: doc.practice_start_time = datetime.strptime(payload.practice_start_time, "%H:%M").time()
+        except: pass
+    if payload.practice_end_time:
+        try: doc.practice_end_time = datetime.strptime(payload.practice_end_time, "%H:%M").time()
+        except: pass
         
-    db.add(db_doctor)
-    db.commit()
-    db.refresh(db_doctor)
-    return db_doctor
+    db.commit(); db.refresh(doc)
+    return doc
+
+@router_admin.delete("/doctors/{doctor_id}")
+def delete_doctor(doctor_id: int, db: Session = Depends(get_db)):
+    doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == doctor_id).first()
+    if not doc: raise HTTPException(404, "Dokter tidak ditemukan")
+    
+    # Cascade Delete
+    db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == doctor_id).delete()
+    db.query(storage.TabelGabungan).filter(storage.TabelGabungan.doctor_id == doctor_id).delete()
+    
+    db.delete(doc); db.commit()
+    return {"message": f"Dokter {doc.dokter} berhasil dihapus."}
 
 # =================================================================
-# MONITORING DASHBOARD
+# 4. MONITORING
 # =================================================================
-
-@router_monitoring.get("/dashboard", response_model=List[schemas.ClinicStatus])
+@router_monitor.get("/dashboard", response_model=List[schemas.ClinicStats])
 def get_dashboard(db: Session = Depends(get_db)):
-    data = []
-    today = datetime.date.today()
-    services = db.query(storage.Service).all()
+    today = datetime.now().date()
+    stats = []
+    polis = db.query(storage.TabelPoli).all()
+    for p in polis:
+        doc_count = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == p.poli).count()
+        services = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.poli == p.poli, storage.TabelPelayanan.visit_date == today).all()
+        stats.append({
+            "poli_name": p.poli, "total_doctors": doc_count, "total_patients_today": len(services),
+            "patients_waiting": sum(1 for s in services if s.status_pelayanan == "Menunggu"),
+            "patients_being_served": sum(1 for s in services if s.status_pelayanan == "Melayani"),
+            "patients_finished": sum(1 for s in services if s.status_pelayanan == "Selesai")
+        })
+    return stats
+
+# =================================================================
+# 5. PUBLIC & OPS
+# =================================================================
+@router_public.get("/polis", response_model=List[schemas.PoliSchema])
+def get_public_polis(db: Session = Depends(get_db)):
+    return db.query(storage.TabelPoli).all()
+
+@router_public.get("/available-doctors", response_model=List[schemas.DoctorSchema])
+def get_public_doctors(poli_name: str, visit_date: date, db: Session = Depends(get_db)):
+    return db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
+
+@router_public.post("/submit", response_model=schemas.PelayananSchema)
+def register_patient(payload: schemas.RegistrationFinal, db: Session = Depends(get_db)):
+    # Cek Dokter
+    dokter = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == payload.doctor_id).first()
+    if not dokter: raise HTTPException(404, "Dokter tidak ditemukan")
     
-    for s in services:
-        doctors = s.doctors
-        waiting = 0
-        serving = 0
-        total_today = 0
-        max_p = 0
-        
-        for d in doctors:
-            max_p += d.max_patients
-            q_today = db.query(storage.Queue).filter(
-                storage.Queue.doctor_id == d.id,
-                func.date(storage.Queue.registration_time) == today
-            ).all()
-            
-            waiting += sum(1 for q in q_today if q.status == "menunggu")
-            serving += sum(1 for q in q_today if q.status == "sedang dilayani")
-            total_today += len(q_today)
-            
-        active = waiting + serving
-        density = (active / max_p * 100) if max_p > 0 else 0
-        
-        data.append(schemas.ClinicStatus(
-            service_id=s.id,
-            service_name=s.name,
-            doctors_count=len(doctors),
-            max_patients_total=max_p,
-            patients_waiting=waiting,
-            patients_serving=serving,
-            total_patients_today=total_today,
-            current_density_percentage=round(density, 2)
-        ))
-        
-    return data
+    # Validasi Poli (Fitur Baru)
+    if dokter.poli != payload.poli:
+        raise HTTPException(400, f"Dokter {dokter.dokter} tidak ada di {payload.poli} (tetapi di {dokter.poli}).")
 
-@router_monitoring.get("/queues", response_model=List[schemas.QueueSchema])
-def get_all_queues(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    queues = db.query(storage.Queue).offset(skip).limit(limit).all()
-    return queues
+    last_q = db.query(storage.TabelPelayanan).filter(
+        storage.TabelPelayanan.doctor_id_ref == payload.doctor_id,
+        storage.TabelPelayanan.visit_date == payload.visit_date
+    ).order_by(storage.TabelPelayanan.queue_sequence.desc()).first()
+    
+    next_seq = (last_q.queue_sequence + 1) if last_q else 1
+    
+    try: doc_code_only = dokter.doctor_code.split('-')[-1]
+    except: doc_code_only = "000"
+        
+    formatted_queue = f"{dokter.poli_rel.prefix}-{doc_code_only}-{next_seq:03d}"
 
-# Register routers
+    pelayanan = storage.TabelPelayanan(
+        nama_pasien=payload.nama_pasien, poli=dokter.poli, dokter=dokter.dokter,
+        doctor_id_ref=dokter.doctor_id, visit_date=payload.visit_date,
+        checkin_time=datetime.now(), status_pelayanan="Menunggu", 
+        queue_number=formatted_queue, queue_sequence=next_seq
+    )
+    db.add(pelayanan)
+    
+    gabungan = storage.TabelGabungan(
+        nama_pasien=payload.nama_pasien, poli=dokter.poli, prefix_poli=dokter.poli_rel.prefix,
+        dokter=dokter.dokter, doctor_code=dokter.doctor_code, doctor_id=dokter.doctor_id,
+        visit_date=payload.visit_date, checkin_time=datetime.now(), status_pelayanan="Menunggu", 
+        queue_number=formatted_queue, queue_sequence=next_seq
+    )
+    db.add(gabungan)
+    db.commit(); db.refresh(pelayanan)
+    return pelayanan
+
+@router_ops.put("/update-status/{pelayanan_id}")
+def update_ops_status(pelayanan_id: int, payload: schemas.UpdateQueueStatus, db: Session = Depends(get_db)):
+    srv = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.id == pelayanan_id).first()
+    if not srv: raise HTTPException(404, "Data tidak ditemukan")
+    if payload.action == "call_patient": srv.clinic_entry_time = datetime.now(); srv.status_pelayanan = "Melayani"
+    elif payload.action == "finish": srv.completion_time = datetime.now(); srv.status_pelayanan = "Selesai"
+    db.commit()
+    return {"status": "Updated", "current_status": srv.status_pelayanan}
+
+app.include_router(router_admin)
 app.include_router(router_public)
-app.include_router(router_admin_services)
-app.include_router(router_admin_doctors)
-app.include_router(router_monitoring)
-app.include_router(router_data)
+app.include_router(router_ops)
+app.include_router(router_monitor)

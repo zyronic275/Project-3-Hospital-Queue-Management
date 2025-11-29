@@ -1,0 +1,13 @@
+dokter,doctor_id,practice_start_time,practice_end_time,doctor_code,max_patients,poli
+Dr. Justin,1,8:00:00,15:00:00,1,24,Poli Gigi
+Dr. Riel,2,8:00:00,15:00:00,2,15,Poli Gigi
+Dr. a,3,8:00:00,15:00:00,1,24,Poli Jantung
+Dr. b,4,8:00:00,15:00:00,2,18,Poli Jantung
+Dr. Eiya,5,8:00:00,15:00:00,1,30,Poli Mata
+Dr. There,6,8:00:00,15:00:00,2,25,Poli Mata
+Dr. c,7,8:00:00,15:00:00,1,35,Poli Paru
+Dr. d,8,8:00:00,15:00:00,2,23,Poli Paru
+Dr. Abel,9,8:00:00,15:00:00,1,10,Poli Umum 
+Dr. Darell,10,8:00:00,15:00:00,2,32,Poli Umum 
+Dr. Strange,1,08:00,16:00,MATA-001,20,Poli Mata
+Dr. Stranger,2,08:00,16:00,MATA-002,20,Poli Mata

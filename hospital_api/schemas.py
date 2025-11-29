@@ -1,117 +1,84 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from datetime import datetime, time, date
-from typing import List, Optional, Any
-from enum import Enum
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional
+from datetime import date, datetime, time
 
-class QueueStatus(str, Enum):
-    menunggu = "menunggu"
-    sedang_dilayani = "sedang dilayani"
-    selesai = "selesai"
+# ==========================================
+# 1. INPUT SCHEMAS (Data Masuk dari User)
+# ==========================================
 
-# --- Base Schemas ---
+class PoliCreate(BaseModel):
+    poli: str = Field(..., examples=["Poli Mata"])
+    prefix: str = Field(..., examples=["MATA"], description="Prefix kode antrean, harus unik")
 
-class ServiceBase(BaseModel):
-    name: str
-    prefix: str = Field(..., max_length=4)
+class DoctorCreate(BaseModel):
+    dokter: str = Field(..., examples=["Dr. Strange"])
+    poli: str = Field(..., examples=["Poli Mata"], description="Nama Poli tempat dokter bekerja")
+    
+    # Format waktu string "HH:MM"
+    practice_start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", examples=["08:00"], description="Format Jam:Menit")
+    practice_end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", examples=["16:00"], description="Format Jam:Menit")
+    
+    max_patients: int = Field(default=20, examples=[20])
+    doctor_id: Optional[int] = Field(default=None, examples=[0], description="Kosongkan untuk Auto ID")
 
-class DoctorBase(BaseModel):
+class DoctorUpdate(BaseModel):
+    dokter: Optional[str] = None
+    poli: Optional[str] = None
+    max_patients: Optional[int] = None
+    practice_start_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$", examples=["09:00"])
+    practice_end_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$", examples=["17:00"])
+
+class RegistrationFinal(BaseModel):
+    nama_pasien: str = Field(..., examples=["Budi Santoso"])
+    poli: str = Field(..., examples=["Poli Mata"], description="Nama Poli yang dituju")
+    doctor_id: int = Field(..., examples=[1], description="ID Dokter yang dipilih")
+    visit_date: date = Field(..., examples=["2025-11-29"])
+
+class UpdateQueueStatus(BaseModel):
+    action: str = Field(..., examples=["call_patient"], description="Isi dengan 'call_patient' atau 'finish'")
+
+# ==========================================
+# 2. OUTPUT SCHEMAS (Data Keluar ke API)
+# ==========================================
+
+class PoliSchema(BaseModel):
+    poli: str
+    prefix: str
+    model_config = ConfigDict(from_attributes=True)
+
+class DoctorSchema(BaseModel):
+    doctor_id: int
+    dokter: str
+    poli: str
     doctor_code: str
-    name: str
     practice_start_time: time
     practice_end_time: time
     max_patients: int
-    services: List[int] 
-
-class PatientBase(BaseModel):
-    name: str
-    date_of_birth: Optional[date] = None
-
-class QueueBase(BaseModel):
-    status: QueueStatus = QueueStatus.menunggu
-
-# --- Create/Update Schemas ---
-
-class ServiceCreate(ServiceBase):
-    pass
-
-class DoctorCreate(DoctorBase):
-    pass
-
-class ServiceUpdate(BaseModel):
-    name: Optional[str] = None
-    prefix: Optional[str] = Field(None, max_length=4)
-
-class DoctorUpdate(BaseModel):
-    doctor_code: Optional[str] = None
-    name: Optional[str] = None
-    practice_start_time: Optional[time] = None
-    practice_end_time: Optional[time] = None
-    max_patients: Optional[int] = None
-    services: Optional[List[int]] = None
-
-class QueueStatusUpdate(BaseModel):
-    status: QueueStatus
-
-# --- Response Schemas (UPDATED FOR PYDANTIC V2) ---
-
-class ServiceSchema(ServiceBase):
-    id: int
-    # NEW SYNTAX: ConfigDict
     model_config = ConfigDict(from_attributes=True)
 
-class DoctorSchema(DoctorBase):
+class PelayananSchema(BaseModel):
     id: int
+    nama_pasien: str
+    dokter: str
+    poli: str
+    visit_date: date
+    status_pelayanan: str
+    
+    # Menampilkan dua format nomor antrean
+    queue_number: str      # String: GIGI-001-005
+    queue_sequence: int    # Integer: 5
+    
+    checkin_time: Optional[datetime] = None
+    clinic_entry_time: Optional[datetime] = None
+    completion_time: Optional[datetime] = None
+    
     model_config = ConfigDict(from_attributes=True)
 
-    @field_validator('services', mode='before')
-    @classmethod
-    def parse_services(cls, v: Any):
-        if v and isinstance(v, list) and hasattr(v[0], 'id'):
-            return [item.id for item in v]
-        return v
-
-class PatientSchema(PatientBase):
-    id: int
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    model_config = ConfigDict(from_attributes=True)
-
-class QueueSchema(QueueBase):
-    id: int
-    queue_id_display: str
-    queue_number: int
-    registration_time: datetime
-    patient_id: int
-    service_id: int
-    doctor_id: int
-    model_config = ConfigDict(from_attributes=True)
-
-# --- Registration & Ticket ---
-
-class Ticket(BaseModel):
-    service: ServiceSchema
-    queue_number: str
-    doctor: DoctorSchema
-
-class RegistrationRequest(BaseModel):
-    patient_name: str
-    date_of_birth: Optional[date] = None
-    service_ids: List[int]
-    doctor_id: Optional[int] = None
-
-class RegistrationResponse(BaseModel):
-    patient: PatientSchema
-    tickets: List[Ticket]
-
-class DoctorAvailableSchema(DoctorSchema):
-    remaining_quota: int
-
-class ClinicStatus(BaseModel):
-    service_id: int
-    service_name: str
-    doctors_count: int
-    max_patients_total: int
-    patients_waiting: int
-    patients_serving: int
+class ClinicStats(BaseModel):
+    poli_name: str
+    total_doctors: int
     total_patients_today: int
-    density_percentage: float
+    patients_waiting: int
+    patients_being_served: int
+    patients_finished: int
+    model_config = ConfigDict(from_attributes=True)

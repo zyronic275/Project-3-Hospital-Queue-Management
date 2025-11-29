@@ -1,8 +1,13 @@
 fastapi
 uvicorn
 sqlalchemy
-pydantic
-pandas
 pymysql
+cryptography
+python-dotenv
+pandas
+numpy
+pydantic
+streamlit
+requests
 pytest
 httpx
