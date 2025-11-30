@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, APIRouter
+from fastapi import FastAPI, Depends, HTTPException, APIRouter, Query
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, date, time
@@ -292,20 +292,54 @@ def scan_barcode_action(payload: schemas.ScanRequest, db: Session = Depends(get_
     return {"status": "Success", "message": msg, "current_status": srv.status_pelayanan}
 
 @router_monitor.get("/dashboard", response_model=List[schemas.ClinicStats])
-def get_dashboard(db: Session = Depends(get_db)):
-    today = datetime.now().date()
+def get_dashboard(
+    # Tambahkan parameter ini agar bisa filter tanggal
+    target_date: date = Query(default_factory=lambda: datetime.now().date()), 
+    db: Session = Depends(get_db)
+):
     stats = []
     polis = db.query(storage.TabelPoli).all()
+    
     for p in polis:
         doc_count = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == p.poli).count()
-        services = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.poli == p.poli, storage.TabelPelayanan.visit_date == today).all()
+        
+        # Filter berdasarkan target_date (bukan cuma hari ini)
+        services = db.query(storage.TabelPelayanan).filter(
+            storage.TabelPelayanan.poli == p.poli,
+            storage.TabelPelayanan.visit_date == target_date 
+        ).all()
+        
         stats.append({
-            "poli_name": p.poli, "total_doctors": doc_count, "total_patients_today": len(services),
+            "poli_name": p.poli,
+            "total_doctors": doc_count,
+            "total_patients_today": len(services), # Total pasien pada tanggal tersebut
             "patients_waiting": sum(1 for s in services if s.status_pelayanan == "Menunggu"),
             "patients_being_served": sum(1 for s in services if s.status_pelayanan == "Melayani"),
             "patients_finished": sum(1 for s in services if s.status_pelayanan == "Selesai")
         })
     return stats
+
+@router_monitor.get("/queue-board", response_model=List[schemas.PelayananSchema])
+def get_queue_board(db: Session = Depends(get_db)):
+    """
+    Mengambil data antrean hari ini yang BELUM SELESAI.
+    (Hanya status 'Menunggu' dan 'Melayani').
+    """
+    today = datetime.now().date()
+    
+    # Filter: Hari ini DAN Status BUKAN 'Selesai' DAN BUKAN 'Terdaftar' (harus sudah check-in)
+    # Urutkan: Yang 'Melayani' paling atas, lalu urut nomor antrean
+    queues = db.query(storage.TabelPelayanan).filter(
+        storage.TabelPelayanan.visit_date == today,
+        storage.TabelPelayanan.status_pelayanan.in_(["Menunggu", "Melayani"]) 
+    ).order_by(
+        # Trik sorting: Melayani (M) > Menunggu (M), secara alfabet desc Melayani duluan.
+        # Atau kita bisa hardcode logic sorting nanti di frontend.
+        storage.TabelPelayanan.status_pelayanan.asc(), 
+        storage.TabelPelayanan.queue_sequence.asc()
+    ).all()
+    
+    return queues
 
 app.include_router(router_admin)
 app.include_router(router_public)
