@@ -2,11 +2,15 @@ import pandas as pd
 import os
 import csv
 
+# Sesuaikan nama file dengan yang ada di folder
 FILE_POLI = "tabel_poli_normal.csv"
 FILE_DOKTER = "tabel_dokter_normal.csv"
 FILE_PELAYANAN = "tabel_pelayanan_normal.csv"
 
 def get_merged_random_data(count: int):
+    """
+    Membaca 3 file CSV, melakukan merge, dan mengambil sample random.
+    """
     if not (os.path.exists(FILE_POLI) and os.path.exists(FILE_DOKTER) and os.path.exists(FILE_PELAYANAN)):
         raise FileNotFoundError("File CSV tidak lengkap.")
 
@@ -19,9 +23,14 @@ def get_merged_random_data(count: int):
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].str.strip()
 
-    # Merge
+    # Merge: Pelayanan -> Dokter -> Poli
     merged = pd.merge(df_layanan, df_dokter, on=["dokter", "poli"], how="left")
+    
+    # Karena tabel dokter sekarang punya 'prefix', kita harus hati-hati saat merge dengan poli
+    # Kita gunakan suffixes agar prefix dari poli (jika ada) tidak menimpa atau error
     merged = pd.merge(merged, df_poli, on="poli", how="left", suffixes=('', '_dup'))
+    
+    # Hapus kolom duplikat (misal prefix_dup dari tabel poli, kita pakai prefix dari tabel dokter/gabungan)
     merged = merged.loc[:, ~merged.columns.str.endswith('_dup')]
     
     # Fill NA
@@ -34,11 +43,15 @@ def get_merged_random_data(count: int):
     return merged.sample(n=min(count, len(merged)))
 
 def append_to_csv(filename: str, data: dict):
+    """
+    Menulis data ke CSV dengan urutan kolom yang benar (UPDATED: support prefix di tabel dokter).
+    """
     file_exists = os.path.isfile(filename)
     field_order = []
     
     if "dokter" in filename:
-        field_order = ["dokter", "doctor_id", "practice_start_time", "practice_end_time", "doctor_code", "max_patients", "poli"]
+        # UPDATED: Menambahkan 'prefix' di akhir
+        field_order = ["dokter", "doctor_id", "practice_start_time", "practice_end_time", "doctor_code", "max_patients", "poli", "prefix"]
     elif "poli" in filename:
         field_order = ["poli", "prefix"]
     elif "pelayanan" in filename:
@@ -46,6 +59,9 @@ def append_to_csv(filename: str, data: dict):
     
     with open(filename, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=field_order)
-        if not file_exists: writer.writeheader()
+        if not file_exists:
+            writer.writeheader()
+        
+        # Filter hanya kolom yang ada di header
         row = {k: v for k, v in data.items() if k in field_order}
         writer.writerow(row)
