@@ -1,50 +1,89 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional
 from datetime import date, datetime, time
+
+# --- VALIDATOR HELPER ---
+def validate_not_empty(v: str, field_name: str):
+    if not v or not v.strip():
+        raise ValueError(f"{field_name} tidak boleh kosong atau hanya spasi.")
+    return v.strip()
 
 # ==========================================
 # 1. INPUT SCHEMAS
 # ==========================================
 
 class PoliCreate(BaseModel):
-    poli: str = Field(..., examples=["Poli Mata"])
-    prefix: str = Field(..., examples=["MATA"], description="Hanya huruf (A-Z), max 3-4 karakter")
+    poli: str = Field(..., min_length=3, examples=["Poli Mata"])
+    prefix: str = Field(..., min_length=2, max_length=5, examples=["MATA"])
 
-    # VALIDASI BARU: PREFIX HARUS HURUF
+    @field_validator('poli')
+    def check_poli_name(cls, v):
+        return validate_not_empty(v, "Nama Poli")
+
     @field_validator('prefix')
-    @classmethod
-    def validate_prefix_alpha(cls, v: str):
+    def check_prefix(cls, v):
+        v = validate_not_empty(v, "Prefix")
         if not v.isalpha():
-            raise ValueError('Prefix harus berupa HURUF saja (tidak boleh angka/simbol).')
+            raise ValueError('Prefix hanya boleh huruf (A-Z).')
         return v.upper()
 
 class DoctorCreate(BaseModel):
-    dokter: str = Field(..., examples=["Dr. Strange"])
-    poli: str = Field(..., examples=["Poli Mata"])
-    practice_start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", examples=["08:00"])
-    practice_end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", examples=["16:00"])
-    max_patients: int = Field(default=20, examples=[20])
-    doctor_id: Optional[int] = Field(default=None, examples=[0])
+    dokter: str = Field(..., min_length=3, examples=["Dr. Strange"])
+    poli: str = Field(...)
+    practice_start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    practice_end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    max_patients: int = Field(default=20, ge=1)
+    doctor_id: Optional[int] = None
+
+    @field_validator('dokter')
+    def check_dokter_name(cls, v):
+        return validate_not_empty(v, "Nama Dokter")
+
+    @model_validator(mode='after')
+    def check_times(self):
+        try:
+            t1 = datetime.strptime(self.practice_start_time, "%H:%M").time()
+            t2 = datetime.strptime(self.practice_end_time, "%H:%M").time()
+            if t2 <= t1: raise ValueError('Jam Selesai harus lebih akhir dari Jam Mulai.')
+        except ValueError as e:
+            if "does not match format" in str(e): raise ValueError("Format jam salah")
+            raise e
+        return self
 
 class DoctorUpdate(BaseModel):
     dokter: Optional[str] = None
     poli: Optional[str] = None
-    max_patients: Optional[int] = None
-    practice_start_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
-    practice_end_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    max_patients: Optional[int] = Field(default=None, ge=1)
+    practice_start_time: Optional[str] = None
+    practice_end_time: Optional[str] = None
+
+    @field_validator('dokter')
+    def check_name(cls, v):
+        if v is not None:
+            return validate_not_empty(v, "Nama Dokter")
+        return v
 
 class RegistrationFinal(BaseModel):
-    nama_pasien: str = Field(..., examples=["Budi Santoso"])
-    poli: str = Field(..., examples=["Poli Mata"])
-    doctor_id: int = Field(..., examples=[1])
-    visit_date: date = Field(..., examples=["2025-11-29"])
+    nama_pasien: str = Field(..., min_length=3)
+    poli: str = Field(...)
+    doctor_id: int = Field(...)
+    visit_date: date = Field(...)
+
+    @field_validator('nama_pasien')
+    def check_pasien(cls, v):
+        return validate_not_empty(v, "Nama Pasien")
+
+    @field_validator('visit_date')
+    def check_date(cls, v):
+        if v < date.today(): raise ValueError('Tanggal tidak boleh masa lalu.')
+        return v
 
 class ScanRequest(BaseModel):
-    barcode_data: str = Field(..., description="ID atau No Antrean")
-    location: str = Field(..., description="'arrival', 'clinic', 'finish'")
+    barcode_data: str = Field(..., min_length=1)
+    location: str = Field(..., pattern="^(arrival|clinic|finish)$")
 
 class UpdateQueueStatus(BaseModel):
-    action: str = Field(..., examples=["call_patient"])
+    action: str = Field(...)
 
 # ==========================================
 # 2. OUTPUT SCHEMAS
