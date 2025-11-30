@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException, APIRouter
+from fastapi import FastAPI, Depends, HTTPException, APIRouter, Query
 from sqlalchemy.orm import Session
-from typing import List,Optional
+from typing import List, Optional
 from datetime import datetime, date, time
 import pandas as pd
 import numpy as np
@@ -12,12 +12,14 @@ import csv_utils
 
 storage.init_db()
 
-app = FastAPI(title="Sistem RS: Barcode & Queue Management")
+app = FastAPI(title="Sistem RS: Barcode, Queue & Analytics")
 
-router_admin = APIRouter(prefix="/admin", tags=["Admin"])
-router_public = APIRouter(prefix="/public", tags=["Public"])
-router_ops = APIRouter(prefix="/ops", tags=["Operasional"])
-router_monitor = APIRouter(prefix="/monitor", tags=["Monitoring"])
+# Setup Router
+router_admin = APIRouter(prefix="/admin", tags=["Admin: Manajemen Data"])
+router_public = APIRouter(prefix="/public", tags=["Public: Pendaftaran"])
+router_ops = APIRouter(prefix="/ops", tags=["Medical Staff: Operasional"])
+router_monitor = APIRouter(prefix="/monitor", tags=["Admin: Monitoring"])
+router_analytics = APIRouter(prefix="/analytics", tags=["Data Science & Insights"])
 
 def get_db():
     db = storage.SessionLocal()
@@ -33,7 +35,82 @@ def parse_datetime_smart(date_val, time_val=None):
         return datetime.combine(d_obj, t_obj)
     except: return None
 
-# --- IMPORT ---
+# =================================================================
+# 1. ANALYTICS & DATA SCIENCE (FITUR BARU)
+# =================================================================
+@router_analytics.get("/comprehensive-report")
+def get_comprehensive_analytics(db: Session = Depends(get_db)):
+    """Melakukan analisis data mendalam: Waktu Tunggu, Durasi Pelayanan, Tren, Prediksi."""
+    query = db.query(storage.TabelPelayanan).all()
+    if not query: return {"status": "No Data"}
+    
+    # Convert ke DataFrame
+    data = []
+    for q in query:
+        data.append({
+            "poli": q.poli, "dokter": q.dokter,
+            "visit_date": pd.to_datetime(q.visit_date),
+            "checkin_time": pd.to_datetime(q.checkin_time) if q.checkin_time else None,
+            "entry_time": pd.to_datetime(q.clinic_entry_time) if q.clinic_entry_time else None,
+            "completion_time": pd.to_datetime(q.completion_time) if q.completion_time else None,
+            "status": q.status_pelayanan
+        })
+    df = pd.DataFrame(data)
+
+    # A. Waktu Tunggu (Checkin -> Masuk Poli)
+    df_wait = df.dropna(subset=['checkin_time', 'entry_time']).copy()
+    df_wait['wait_minutes'] = (df_wait['entry_time'] - df_wait['checkin_time']).dt.total_seconds() / 60
+    avg_wait_poli = df_wait.groupby('poli')['wait_minutes'].mean().round(1).to_dict()
+
+    # B. Durasi Pelayanan Dokter (Masuk Poli -> Selesai)
+    df_service = df.dropna(subset=['entry_time', 'completion_time']).copy()
+    df_service['service_minutes'] = (df_service['completion_time'] - df_service['entry_time']).dt.total_seconds() / 60
+    avg_service_doc = df_service.groupby('dokter')['service_minutes'].mean().round(1).to_dict()
+    avg_service_poli = df_service.groupby('poli')['service_minutes'].mean().round(1).to_dict()
+
+    # C. Tren Harian
+    trend = df.groupby(df['visit_date'].dt.date).size().to_dict()
+    trend_str = {str(k): v for k, v in trend.items()}
+
+    # D. Peak Hours (Jam Sibuk)
+    peak_hours = {}
+    busiest_hour = 0
+    if 'checkin_time' in df and not df['checkin_time'].isna().all():
+        peak_hours = df['checkin_time'].dt.hour.value_counts().sort_index().to_dict()
+        if not df['checkin_time'].isna().all(): busiest_hour = int(df['checkin_time'].dt.hour.mode()[0])
+
+    # E. Korelasi Antrean (Jam Sibuk vs Normal)
+    global_avg = df_wait['wait_minutes'].mean() if not df_wait.empty else 0
+    peak_avg = df_wait[df_wait['checkin_time'].dt.hour == busiest_hour]['wait_minutes'].mean() if busiest_hour else 0
+    
+    correlation = {
+        "global_avg_wait": round(global_avg, 1),
+        "peak_hour": busiest_hour,
+        "peak_avg_wait": round(peak_avg, 1),
+        "increase_pct": round(((peak_avg - global_avg)/global_avg*100), 1) if global_avg > 0 else 0
+    }
+
+    # F. Prediksi Besok (Simple Moving Average 3 Hari)
+    try:
+        daily = df.groupby(df['visit_date'].dt.date).size()
+        pred = int(daily.tail(3).mean()) if len(daily) >= 3 else (int(daily.mean()) if not daily.empty else 0)
+    except: pred = 0
+
+    return {
+        "avg_wait_per_poli": avg_wait_poli,
+        "avg_service_per_doc": avg_service_doc,
+        "avg_service_per_poli": avg_service_poli,
+        "trend_daily": trend_str,
+        "busiest_poli": df['poli'].value_counts().head(5).to_dict(),
+        "busiest_doc": df['dokter'].value_counts().head(5).to_dict(),
+        "peak_hours": peak_hours,
+        "correlation": correlation,
+        "prediction": pred
+    }
+
+# =================================================================
+# 2. ADMIN IMPORT (FIX LOGIC)
+# =================================================================
 @router_admin.get("/import-random-data")
 def import_random_data(count: int = 10, db: Session = Depends(get_db)):
     try:
@@ -42,11 +119,14 @@ def import_random_data(count: int = 10, db: Session = Depends(get_db)):
         for _, row in df.iterrows():
             poli_clean = str(row['poli']).strip()
             if not poli_clean: continue
+            
+            # Poli
             poli_obj = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == poli_clean).first()
             if not poli_obj:
                 poli_obj = storage.TabelPoli(poli=poli_clean, prefix=row.get('prefix', 'POL'))
                 db.add(poli_obj); db.commit()
             
+            # Dokter
             try: csv_doc_id = int(float(row['doctor_id']))
             except: csv_doc_id = 0
             
@@ -56,6 +136,7 @@ def import_random_data(count: int = 10, db: Session = Depends(get_db)):
             if not doc_obj:
                 final_doc_id = csv_doc_id if csv_doc_id > 0 else (db.query(storage.TabelDokter).count() + 1)
                 
+                # Regex Doctor Code
                 raw_code_str = str(row['doctor_code'])
                 found_numbers = re.findall(r'\d+', raw_code_str)
                 code_number = int(found_numbers[-1]) if found_numbers else final_doc_id
@@ -71,6 +152,7 @@ def import_random_data(count: int = 10, db: Session = Depends(get_db)):
                 )
                 db.add(doc_obj); db.commit()
 
+            # Pelayanan
             real_checkin = parse_datetime_smart(row['visit_date'], row['checkin_time'])
             real_entry = parse_datetime_smart(row['visit_date'], row['clinic_entry_time'])
             real_completion = parse_datetime_smart(row['visit_date'], row['completion_time'])
@@ -113,20 +195,12 @@ def import_random_data(count: int = 10, db: Session = Depends(get_db)):
         import traceback; traceback.print_exc()
         raise HTTPException(500, detail=str(e))
 
-# --- MANAJEMEN POLI ---
+# --- MANAJEMEN ADMIN (Poli & Dokter) ---
 @router_admin.post("/polis", response_model=schemas.PoliSchema)
 def create_poli(payload: schemas.PoliCreate, db: Session = Depends(get_db)):
-    clean_poli = payload.poli.strip()
-    clean_prefix = payload.prefix.strip().upper()
-    
-    # Validasi Nama Poli
-    if db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == clean_poli).first():
-        raise HTTPException(400, f"Poli '{clean_poli}' sudah ada.")
-    
-    # Validasi Prefix (Case Sensitive di DB, tapi kita sudah .upper() di sini)
-    if db.query(storage.TabelPoli).filter(storage.TabelPoli.prefix == clean_prefix).first():
-        raise HTTPException(400, f"Prefix '{clean_prefix}' sudah digunakan oleh poli lain.")
-
+    clean_poli, clean_prefix = payload.poli.strip(), payload.prefix.strip().upper()
+    if db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == clean_poli).first(): raise HTTPException(400, "Poli sudah ada.")
+    if db.query(storage.TabelPoli).filter(storage.TabelPoli.prefix == clean_prefix).first(): raise HTTPException(400, "Prefix digunakan.")
     new_poli = storage.TabelPoli(poli=clean_poli, prefix=clean_prefix)
     db.add(new_poli); db.commit(); db.refresh(new_poli)
     try: csv_utils.append_to_csv("tabel_poli_normal.csv", {"poli": new_poli.poli, "prefix": new_poli.prefix})
@@ -135,17 +209,11 @@ def create_poli(payload: schemas.PoliCreate, db: Session = Depends(get_db)):
 
 @router_admin.put("/polis/{poli_name}", response_model=schemas.PoliSchema)
 def update_poli_prefix(poli_name: str, payload: schemas.PoliCreate, db: Session = Depends(get_db)):
-    """Update Prefix Poli (Nama poli tidak bisa diubah karena PK)"""
     poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == poli_name).first()
     if not poli: raise HTTPException(404, "Poli tidak ditemukan")
-    
     clean_prefix = payload.prefix.strip().upper()
-    
-    # Cek prefix duplikat (kecuali punya sendiri)
     existing = db.query(storage.TabelPoli).filter(storage.TabelPoli.prefix == clean_prefix).first()
-    if existing and existing.poli != poli_name:
-        raise HTTPException(400, f"Prefix '{clean_prefix}' sudah dipakai.")
-        
+    if existing and existing.poli != poli_name: raise HTTPException(400, "Prefix dipakai.")
     poli.prefix = clean_prefix
     db.commit(); db.refresh(poli)
     return poli
@@ -154,17 +222,14 @@ def update_poli_prefix(poli_name: str, payload: schemas.PoliCreate, db: Session 
 def delete_poli(poli_name: str, db: Session = Depends(get_db)):
     poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == poli_name).first()
     if not poli: raise HTTPException(404, "Poli tidak ditemukan")
-    
-    # Cascade Delete
     docs = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
     for doc in docs:
         db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == doc.doctor_id).delete()
         db.query(storage.TabelGabungan).filter(storage.TabelGabungan.doctor_id == doc.doctor_id).delete()
         db.delete(doc)
     db.delete(poli); db.commit()
-    return {"message": "Poli dan seluruh isinya berhasil dihapus."}
+    return {"message": "Poli terhapus."}
 
-# --- MANAJEMEN DOKTER ---
 @router_admin.get("/doctors/{doctor_id}", response_model=schemas.DoctorSchema)
 def get_single_doctor(doctor_id: int, db: Session = Depends(get_db)):
     doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == doctor_id).first()
@@ -175,7 +240,6 @@ def get_single_doctor(doctor_id: int, db: Session = Depends(get_db)):
 def add_doctor(payload: schemas.DoctorCreate, db: Session = Depends(get_db)):
     poli = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == payload.poli).first()
     if not poli: raise HTTPException(404, "Poli tidak ditemukan.")
-    
     final_id = payload.doctor_id or ((db.query(storage.TabelDokter).order_by(storage.TabelDokter.doctor_id.desc()).first().doctor_id + 1) if db.query(storage.TabelDokter).first() else 1)
     
     last_doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == payload.poli).order_by(storage.TabelDokter.doctor_id.desc()).first()
@@ -198,28 +262,21 @@ def add_doctor(payload: schemas.DoctorCreate, db: Session = Depends(get_db)):
 def update_doctor(doctor_id: int, payload: schemas.DoctorUpdate, db: Session = Depends(get_db)):
     doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == doctor_id).first()
     if not doc: raise HTTPException(404, "Dokter tidak ditemukan")
-    
     if payload.dokter: doc.dokter = payload.dokter
     if payload.max_patients: doc.max_patients = payload.max_patients
-    
-    # Handle Waktu
     if payload.practice_start_time:
         try: doc.practice_start_time = datetime.strptime(payload.practice_start_time, "%H:%M").time()
         except: pass
     if payload.practice_end_time:
         try: doc.practice_end_time = datetime.strptime(payload.practice_end_time, "%H:%M").time()
         except: pass
-        
-    # Handle Pindah Poli (Code berubah)
     if payload.poli and payload.poli != doc.poli:
         poli_new = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == payload.poli).first()
         if poli_new:
             doc.poli = payload.poli
-            # Regenerate Code
             last_doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == payload.poli).order_by(storage.TabelDokter.doctor_id.desc()).first()
             next_n = int(last_doc.doctor_code.split('-')[-1]) + 1 if last_doc else 1
             doc.doctor_code = f"{poli_new.prefix}-{next_n:03d}"
-
     db.commit(); db.refresh(doc)
     return doc
 
@@ -240,34 +297,11 @@ def get_public_polis(db: Session = Depends(get_db)): return db.query(storage.Tab
 def get_public_doctors(poli_name: str, visit_date: date, db: Session = Depends(get_db)): return db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
 
 @router_public.get("/find-ticket", response_model=List[schemas.PelayananSchema])
-def find_ticket_by_name(
-    nama: str, 
-    target_date: Optional[date] = None, # Parameter Baru (Opsional)
-    db: Session = Depends(get_db)
-):
-    """
-    Mencari tiket berdasarkan nama. 
-    Jika target_date diisi, akan difilter berdasarkan tanggal tersebut.
-    Jika tidak, akan menampilkan semua riwayat nama tersebut (urut terbaru).
-    """
-    # Base Query: Filter Nama (Case Insensitive)
-    query = db.query(storage.TabelPelayanan).filter(
-        storage.TabelPelayanan.nama_pasien.ilike(f"%{nama}%")
-    )
-    
-    # Filter Tanggal (Jika user meminta filter tanggal)
-    if target_date:
-        query = query.filter(storage.TabelPelayanan.visit_date == target_date)
-        
-    # Urutkan dari yang paling baru (Descending)
+def find_ticket_by_name(nama: str, target_date: Optional[date] = None, db: Session = Depends(get_db)):
+    query = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.nama_pasien.ilike(f"%{nama}%"))
+    if target_date: query = query.filter(storage.TabelPelayanan.visit_date == target_date)
     tickets = query.order_by(storage.TabelPelayanan.visit_date.desc()).all()
-    
-    if not tickets:
-        msg = f"Tidak ditemukan tiket atas nama '{nama}'"
-        if target_date:
-            msg += f" pada tanggal {target_date}"
-        raise HTTPException(status_code=404, detail=msg)
-        
+    if not tickets: raise HTTPException(404, "Tiket tidak ditemukan.")
     return tickets
 
 @router_public.post("/submit", response_model=schemas.PelayananSchema)
@@ -278,7 +312,8 @@ def register_patient(payload: schemas.RegistrationFinal, db: Session = Depends(g
     
     last_q = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == payload.doctor_id, storage.TabelPelayanan.visit_date == payload.visit_date).order_by(storage.TabelPelayanan.queue_sequence.desc()).first()
     next_seq = (last_q.queue_sequence + 1) if last_q else 1
-    
+    if next_seq > 999: raise HTTPException(400, "Kuota penuh.")
+
     try: doc_code_only = dokter.doctor_code.split('-')[-1]
     except: doc_code_only = "000"
     formatted_queue = f"{dokter.poli_rel.prefix}-{doc_code_only}-{next_seq:03d}"
@@ -327,7 +362,6 @@ def scan_barcode_action(payload: schemas.ScanRequest, db: Session = Depends(get_
 
 @router_monitor.get("/dashboard", response_model=List[schemas.ClinicStats])
 def get_dashboard(db: Session = Depends(get_db), target_date: date = None):
-    # Default date today if not provided
     filter_date = target_date if target_date else datetime.now().date()
     stats = []
     polis = db.query(storage.TabelPoli).all()
@@ -352,3 +386,4 @@ app.include_router(router_admin)
 app.include_router(router_public)
 app.include_router(router_ops)
 app.include_router(router_monitor)
+app.include_router(router_analytics)
