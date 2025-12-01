@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+sqlalchemy
+pymysql
+cryptography
+python-dotenv
+pandas
+numpy
+pydantic
+streamlit
+requests
+qrcode
+pillow
+opencv-python-headless
