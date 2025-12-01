@@ -5,6 +5,10 @@ from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 
 load_dotenv()
 
+<<<<<<< HEAD
+=======
+# Konfigurasi Database
+>>>>>>> 57f37a25aae074be8b66a8d26db930948df27bd6
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -50,8 +54,13 @@ class TabelPelayanan(Base):
     clinic_entry_time = Column(DateTime, nullable=True)
     completion_time = Column(DateTime, nullable=True)
     status_pelayanan = Column(String(50))
+<<<<<<< HEAD
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
+=======
+    queue_number = Column(String(50))  # String: GIGI-001-001
+    queue_sequence = Column(Integer)   # Integer: 1
+>>>>>>> 57f37a25aae074be8b66a8d26db930948df27bd6
     dokter_rel = relationship("TabelDokter", back_populates="pelayanans")
 
 class TabelGabungan(Base):
