@@ -162,12 +162,7 @@ def update_poli(poli_name: str, payload: schemas.PoliCreate, db: Session = Depen
         for d in docs:
             try: num = d.doctor_code.split('-')[-1]
             except: num = "000"
-<<<<<<< HEAD
-            d.doctor_code = f"{clean_new_prefix}-{num}"u
-            
-=======
             d.doctor_code = f"{clean_new_prefix}-{num}"
->>>>>>> main
         db.query(storage.TabelGabungan).filter(storage.TabelGabungan.poli == poli_name).update({storage.TabelGabungan.prefix_poli: clean_new_prefix}, synchronize_session=False)
         db.commit(); db.refresh(old_poli)
         return old_poli
