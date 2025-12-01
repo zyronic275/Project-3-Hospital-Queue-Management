@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from typing import Optional
 from datetime import date, datetime, time
 
+# ... (Input Schemas Tetap Sama) ...
 def validate_not_empty(v: str, field_name: str):
     if not v or not v.strip():
         raise ValueError(f"{field_name} tidak boleh kosong.")
@@ -9,11 +10,9 @@ def validate_not_empty(v: str, field_name: str):
 
 class PoliCreate(BaseModel):
     poli: str = Field(..., min_length=3, examples=["Poli Mata"])
-    prefix: str = Field(..., min_length=1, max_length=4, examples=["MATA"])
-
+    prefix: str = Field(..., min_length=1, max_length=5, examples=["MATA"])
     @field_validator('poli')
     def check_poli_name(cls, v): return validate_not_empty(v, "Nama Poli")
-
     @field_validator('prefix')
     def check_prefix(cls, v):
         v = validate_not_empty(v, "Prefix")
@@ -27,10 +26,8 @@ class DoctorCreate(BaseModel):
     practice_end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     max_patients: int = Field(default=20, ge=1)
     doctor_id: Optional[int] = None
-
     @field_validator('dokter')
     def check_dokter_name(cls, v): return validate_not_empty(v, "Nama Dokter")
-
     @model_validator(mode='after')
     def check_times(self):
         try:
@@ -54,10 +51,8 @@ class RegistrationFinal(BaseModel):
     poli: str = Field(...)
     doctor_id: int = Field(...)
     visit_date: date = Field(...)
-
     @field_validator('nama_pasien')
     def check_pasien(cls, v): return validate_not_empty(v, "Nama Pasien")
-
     @field_validator('visit_date')
     def check_date(cls, v):
         if v < date.today(): raise ValueError('Tanggal tidak boleh masa lalu.')
@@ -69,6 +64,8 @@ class ScanRequest(BaseModel):
 
 class UpdateQueueStatus(BaseModel):
     action: str = Field(...)
+
+# ... (Output Schemas) ...
 
 class PoliSchema(BaseModel):
     poli: str; prefix: str
@@ -85,6 +82,10 @@ class PelayananSchema(BaseModel):
     checkin_time: Optional[datetime] = None
     clinic_entry_time: Optional[datetime] = None
     completion_time: Optional[datetime] = None
+    
+    # TAMBAHAN FIELD JADWAL DOKTER
+    doctor_schedule: Optional[str] = None 
+    
     model_config = ConfigDict(from_attributes=True)
 
 class ClinicStats(BaseModel):

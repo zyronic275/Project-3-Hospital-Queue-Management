@@ -10,13 +10,14 @@ import schemas
 import csv_utils
 
 storage.init_db()
-app = FastAPI(title="Sistem RS: Barcode, Queue & Analytics")
+app = FastAPI(title="Sistem RS: Barcode & Analytics Pro")
 
-router_admin = APIRouter(prefix="/admin", tags=["Admin: Manajemen Data"])
-router_public = APIRouter(prefix="/public", tags=["Public: Pendaftaran"])
-router_ops = APIRouter(prefix="/ops", tags=["Medical Staff: Operasional"])
-router_monitor = APIRouter(prefix="/monitor", tags=["Admin: Monitoring"])
-router_analytics = APIRouter(prefix="/analytics", tags=["Data Science & Insights"])
+# Routers
+router_admin = APIRouter(prefix="/admin", tags=["Admin"])
+router_public = APIRouter(prefix="/public", tags=["Public"])
+router_ops = APIRouter(prefix="/ops", tags=["Operasional"])
+router_monitor = APIRouter(prefix="/monitor", tags=["Monitoring"])
+router_analytics = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 def get_db():
     db = storage.SessionLocal()
@@ -32,42 +33,97 @@ def parse_datetime_smart(date_val, time_val=None):
         return datetime.combine(d_obj, t_obj)
     except: return None
 
-# ANALYTICS
-@router_analytics.get("/comprehensive-report")
-def get_comprehensive_analytics(db: Session = Depends(get_db)):
-    query = db.query(storage.TabelPelayanan).all()
-    all_doctors = db.query(storage.TabelDokter).all()
-    if not query: return {"status": "No Data"}
-    data = []
-    for q in query:
-        data.append({
-            "poli": q.poli, "dokter": q.dokter,
-            "entry_time": pd.to_datetime(q.clinic_entry_time) if q.clinic_entry_time else None,
-            "completion_time": pd.to_datetime(q.completion_time) if q.completion_time else None,
-            "status": q.status_pelayanan
-        })
-    df = pd.DataFrame(data)
-    df['service_minutes'] = (df['completion_time'] - df['entry_time']).dt.total_seconds() / 60
+# --- PUBLIC ENDPOINTS (MODIFIED) ---
 
-    poli_volume = df['poli'].value_counts(ascending=True).to_dict()
-    df_valid = df.dropna(subset=['service_minutes'])
-    avg_svc_poli = df_valid.groupby('poli')['service_minutes'].mean().round(1).sort_values(ascending=True).to_dict()
-    avg_svc_doc = df_valid.groupby('dokter')['service_minutes'].mean()
-    staff_eff = (60 / avg_svc_doc[avg_svc_doc > 0]).round(1).sort_values(ascending=True).to_dict() if not avg_svc_doc.empty else {}
-    
-    active_docs = df['dokter'].unique().tolist()
-    idle_docs = [d.dokter for d in all_doctors if d.dokter not in active_docs]
-    
-    summary = df.groupby('poli').agg(count=('status','count'), speed=('service_minutes','mean')).dropna()
-    corr_coef = round(summary['count'].corr(summary['speed']), 2) if len(summary) > 1 else 0
-    
-    return {
-        "poli_volume": poli_volume, "poli_speed": avg_svc_poli, "staff_effectiveness": staff_eff,
-        "correlation": {"coef": corr_coef}, "ghost_rate": round((len(df[df['status']=='Terdaftar'])/len(df)*100), 1),
-        "idle_doctors": idle_docs, "total_active_doctors": len(active_docs), "total_doctors_registered": len(all_doctors)
-    }
+@router_public.get("/polis", response_model=List[schemas.PoliSchema])
+def get_public_polis(db: Session = Depends(get_db)): return db.query(storage.TabelPoli).all()
 
-# IMPORT
+@router_public.get("/available-doctors", response_model=List[schemas.DoctorSchema])
+def get_public_doctors(poli_name: str, visit_date: date, db: Session = Depends(get_db)): 
+    return db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
+
+# MODIFIKASI: Sertakan jadwal dokter dalam response
+@router_public.get("/find-ticket", response_model=List[schemas.PelayananSchema])
+def find_ticket_by_name(nama: str, target_date: Optional[date] = None, db: Session = Depends(get_db)):
+    query = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.nama_pasien.ilike(f"%{nama}%"))
+    if target_date: query = query.filter(storage.TabelPelayanan.visit_date == target_date)
+    tickets = query.order_by(storage.TabelPelayanan.visit_date.desc()).all()
+    if not tickets: raise HTTPException(404, "Tiket tidak ditemukan.")
+    
+    # Inject jadwal dokter manual karena bukan kolom tabel pelayanan
+    results = []
+    for t in tickets:
+        t_dict = t.__dict__
+        if t.dokter_rel:
+            start = t.dokter_rel.practice_start_time.strftime("%H:%M")
+            end = t.dokter_rel.practice_end_time.strftime("%H:%M")
+            t_dict['doctor_schedule'] = f"{start} - {end}"
+        else:
+            t_dict['doctor_schedule'] = "-"
+        results.append(t_dict)
+        
+    return results
+
+@router_public.post("/submit", response_model=schemas.PelayananSchema)
+def register_patient(payload: schemas.RegistrationFinal, db: Session = Depends(get_db)):
+    if payload.visit_date < date.today(): raise HTTPException(400, "Tanggal masa lalu.")
+    dokter = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == payload.doctor_id).first()
+    if not dokter: raise HTTPException(404, "Dokter tidak ditemukan")
+    if dokter.poli != payload.poli: raise HTTPException(400, f"Dokter tidak ada di {payload.poli}")
+    
+    last_q = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == payload.doctor_id, storage.TabelPelayanan.visit_date == payload.visit_date).order_by(storage.TabelPelayanan.queue_sequence.desc()).first()
+    next_seq = (last_q.queue_sequence + 1) if last_q else 1
+    if next_seq > 999: raise HTTPException(400, "Kuota penuh.")
+
+    try: doc_code_only = dokter.doctor_code.split('-')[-1]
+    except: doc_code_only = "000"
+    formatted_queue = f"{dokter.poli_rel.prefix}-{doc_code_only}-{next_seq:03d}"
+
+    pelayanan = storage.TabelPelayanan(
+        nama_pasien=payload.nama_pasien, poli=dokter.poli, dokter=dokter.dokter, doctor_id_ref=dokter.doctor_id, 
+        visit_date=payload.visit_date, checkin_time=None, status_pelayanan="Terdaftar", 
+        queue_number=formatted_queue, queue_sequence=next_seq
+    )
+    db.add(pelayanan)
+    gabungan = storage.TabelGabungan(
+        nama_pasien=payload.nama_pasien, poli=dokter.poli, prefix_poli=dokter.poli_rel.prefix,
+        dokter=dokter.dokter, doctor_code=dokter.doctor_code, doctor_id=dokter.doctor_id,
+        visit_date=payload.visit_date, checkin_time=None, status_pelayanan="Terdaftar", 
+        queue_number=formatted_queue, queue_sequence=next_seq
+    )
+    db.add(gabungan); db.commit(); db.refresh(pelayanan)
+    
+    # Inject jadwal untuk response
+    res = pelayanan.__dict__
+    res['doctor_schedule'] = f"{dokter.practice_start_time.strftime('%H:%M')} - {dokter.practice_end_time.strftime('%H:%M')}"
+    return res
+
+# --- OPS, ADMIN, MONITOR (SAMA SEPERTI SEBELUMNYA) ---
+@router_ops.post("/scan-barcode")
+def scan_barcode_action(payload: schemas.ScanRequest, db: Session = Depends(get_db)):
+    srv = None
+    clean_input = payload.barcode_data.strip()
+    if clean_input.isdigit(): srv = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.id == int(clean_input)).first()
+    if not srv: srv = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.queue_number == clean_input).first()
+    if not srv: raise HTTPException(404, "Data Tiket tidak ditemukan.")
+    
+    msg = ""
+    if payload.location == "arrival":
+        if srv.checkin_time: return {"status": "Info", "message": "Sudah check-in."}
+        srv.checkin_time = datetime.now(); srv.status_pelayanan = "Menunggu"; msg = "Check-in OK."
+    elif payload.location == "clinic":
+        if not srv.checkin_time: raise HTTPException(400, "Belum check-in!"); 
+        srv.clinic_entry_time = datetime.now(); srv.status_pelayanan = "Melayani"; msg = "Masuk poli."
+    elif payload.location == "finish":
+        if not srv.clinic_entry_time: raise HTTPException(400, "Belum masuk poli!"); 
+        srv.completion_time = datetime.now(); srv.status_pelayanan = "Selesai"; msg = "Selesai."
+    else: raise HTTPException(400, "Lokasi salah.")
+    
+    gab = db.query(storage.TabelGabungan).filter(storage.TabelGabungan.id == srv.id).first() 
+    if gab: gab.checkin_time, gab.clinic_entry_time, gab.completion_time, gab.status_pelayanan = srv.checkin_time, srv.clinic_entry_time, srv.completion_time, srv.status_pelayanan
+    db.commit()
+    return {"status": "Success", "message": msg, "current_status": srv.status_pelayanan}
+
 @router_admin.get("/import-random-data")
 def import_random_data(count: int = 10, db: Session = Depends(get_db)):
     try:
@@ -119,10 +175,8 @@ def import_random_data(count: int = 10, db: Session = Depends(get_db)):
             db.add(gabungan)
         db.commit()
         return {"message": "Sukses import data."}
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
+    except Exception as e: raise HTTPException(500, detail=str(e))
 
-# ADMIN POLI
 @router_admin.post("/polis", response_model=schemas.PoliSchema)
 def create_poli(payload: schemas.PoliCreate, db: Session = Depends(get_db)):
     clean_poli, clean_prefix = payload.poli.strip(), payload.prefix.strip().upper()
@@ -179,7 +233,6 @@ def delete_poli(poli_name: str, db: Session = Depends(get_db)):
     db.delete(poli); db.commit()
     return {"message": "Poli terhapus."}
 
-# ADMIN DOKTER
 @router_admin.get("/doctors", response_model=List[schemas.DoctorSchema])
 def get_all_doctors(db: Session = Depends(get_db)): return db.query(storage.TabelDokter).all()
 
@@ -216,12 +269,10 @@ def add_doctor(payload: schemas.DoctorCreate, db: Session = Depends(get_db)):
 def update_doctor(doctor_id: int, payload: schemas.DoctorUpdate, db: Session = Depends(get_db)):
     doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == doctor_id).first()
     if not doc: raise HTTPException(404, "Dokter tidak ditemukan")
-    
     if payload.dokter and payload.dokter != doc.dokter:
         db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == doctor_id).update({storage.TabelPelayanan.dokter: payload.dokter}, synchronize_session=False)
         db.query(storage.TabelGabungan).filter(storage.TabelGabungan.doctor_id == doctor_id).update({storage.TabelGabungan.dokter: payload.dokter}, synchronize_session=False)
         doc.dokter = payload.dokter
-
     if payload.max_patients: doc.max_patients = payload.max_patients
     if payload.practice_start_time:
         try: doc.practice_start_time = datetime.strptime(payload.practice_start_time, "%H:%M").time()
@@ -238,7 +289,6 @@ def update_doctor(doctor_id: int, payload: schemas.DoctorUpdate, db: Session = D
             doc.doctor_code = f"{poli_new.prefix}-{next_n:03d}"
             db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == doctor_id).update({storage.TabelPelayanan.poli: payload.poli}, synchronize_session=False)
             db.query(storage.TabelGabungan).filter(storage.TabelGabungan.doctor_id == doctor_id).update({storage.TabelGabungan.poli: payload.poli, storage.TabelGabungan.prefix_poli: poli_new.prefix}, synchronize_session=False)
-
     db.commit(); db.refresh(doc)
     return doc
 
@@ -250,67 +300,6 @@ def delete_doctor(doctor_id: int, db: Session = Depends(get_db)):
     db.query(storage.TabelGabungan).filter(storage.TabelGabungan.doctor_id == doctor_id).delete()
     db.delete(doc); db.commit()
     return {"message": "Dokter dihapus."}
-
-# PUBLIC
-@router_public.get("/polis", response_model=List[schemas.PoliSchema])
-def get_public_polis(db: Session = Depends(get_db)): return db.query(storage.TabelPoli).all()
-
-@router_public.get("/available-doctors", response_model=List[schemas.DoctorSchema])
-def get_public_doctors(poli_name: str, visit_date: date, db: Session = Depends(get_db)): return db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
-
-@router_public.get("/find-ticket", response_model=List[schemas.PelayananSchema])
-def find_ticket_by_name(nama: str, target_date: Optional[date] = None, db: Session = Depends(get_db)):
-    query = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.nama_pasien.ilike(f"%{nama}%"))
-    if target_date: query = query.filter(storage.TabelPelayanan.visit_date == target_date)
-    tickets = query.order_by(storage.TabelPelayanan.visit_date.desc()).all()
-    if not tickets: raise HTTPException(404, "Tiket tidak ditemukan.")
-    return tickets
-
-@router_public.post("/submit", response_model=schemas.PelayananSchema)
-def register_patient(payload: schemas.RegistrationFinal, db: Session = Depends(get_db)):
-    if payload.visit_date < date.today(): raise HTTPException(400, "Tanggal masa lalu.")
-    dokter = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == payload.doctor_id).first()
-    if not dokter: raise HTTPException(404, "Dokter tidak ditemukan")
-    if dokter.poli != payload.poli: raise HTTPException(400, f"Dokter tidak ada di {payload.poli}")
-    
-    last_q = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.doctor_id_ref == payload.doctor_id, storage.TabelPelayanan.visit_date == payload.visit_date).order_by(storage.TabelPelayanan.queue_sequence.desc()).first()
-    next_seq = (last_q.queue_sequence + 1) if last_q else 1
-    if next_seq > 999: raise HTTPException(400, "Kuota penuh.")
-
-    try: doc_code_only = dokter.doctor_code.split('-')[-1]
-    except: doc_code_only = "000"
-    formatted_queue = f"{dokter.poli_rel.prefix}-{doc_code_only}-{next_seq:03d}"
-
-    pelayanan = storage.TabelPelayanan(nama_pasien=payload.nama_pasien, poli=dokter.poli, dokter=dokter.dokter, doctor_id_ref=dokter.doctor_id, visit_date=payload.visit_date, checkin_time=None, status_pelayanan="Terdaftar", queue_number=formatted_queue, queue_sequence=next_seq)
-    db.add(pelayanan)
-    gabungan = storage.TabelGabungan(nama_pasien=payload.nama_pasien, poli=dokter.poli, prefix_poli=dokter.poli_rel.prefix, dokter=dokter.dokter, doctor_code=dokter.doctor_code, doctor_id=dokter.doctor_id, visit_date=payload.visit_date, checkin_time=None, status_pelayanan="Terdaftar", queue_number=formatted_queue, queue_sequence=next_seq)
-    db.add(gabungan); db.commit(); db.refresh(pelayanan)
-    return pelayanan
-
-@router_ops.post("/scan-barcode")
-def scan_barcode_action(payload: schemas.ScanRequest, db: Session = Depends(get_db)):
-    srv = None
-    clean_input = payload.barcode_data.strip()
-    if clean_input.isdigit(): srv = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.id == int(clean_input)).first()
-    if not srv: srv = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.queue_number == clean_input).first()
-    if not srv: raise HTTPException(404, "Data Tiket tidak ditemukan.")
-    
-    msg = ""
-    if payload.location == "arrival":
-        if srv.checkin_time: return {"status": "Info", "message": "Sudah check-in."}
-        srv.checkin_time = datetime.now(); srv.status_pelayanan = "Menunggu"; msg = "Check-in OK."
-    elif payload.location == "clinic":
-        if not srv.checkin_time: raise HTTPException(400, "Belum check-in!"); 
-        srv.clinic_entry_time = datetime.now(); srv.status_pelayanan = "Melayani"; msg = "Masuk poli."
-    elif payload.location == "finish":
-        if not srv.clinic_entry_time: raise HTTPException(400, "Belum masuk poli!"); 
-        srv.completion_time = datetime.now(); srv.status_pelayanan = "Selesai"; msg = "Selesai."
-    else: raise HTTPException(400, "Lokasi salah.")
-    
-    gab = db.query(storage.TabelGabungan).filter(storage.TabelGabungan.id == srv.id).first() 
-    if gab: gab.checkin_time, gab.clinic_entry_time, gab.completion_time, gab.status_pelayanan = srv.checkin_time, srv.clinic_entry_time, srv.completion_time, srv.status_pelayanan
-    db.commit()
-    return {"status": "Success", "message": msg, "current_status": srv.status_pelayanan}
 
 @router_monitor.get("/dashboard", response_model=List[schemas.ClinicStats])
 def get_dashboard(db: Session = Depends(get_db), target_date: date = None):
@@ -328,6 +317,36 @@ def get_queue_board(db: Session = Depends(get_db)):
     today = datetime.now().date()
     queues = db.query(storage.TabelPelayanan).filter(storage.TabelPelayanan.visit_date == today, storage.TabelPelayanan.status_pelayanan.in_(["Menunggu", "Melayani"])).order_by(storage.TabelPelayanan.status_pelayanan.asc(), storage.TabelPelayanan.queue_sequence.asc()).all()
     return queues
+
+@router_analytics.get("/comprehensive-report")
+def get_comprehensive_analytics(db: Session = Depends(get_db)):
+    query = db.query(storage.TabelPelayanan).all()
+    all_doctors = db.query(storage.TabelDokter).all()
+    if not query: return {"status": "No Data"}
+    data = []
+    for q in query:
+        data.append({
+            "poli": q.poli, "dokter": q.dokter,
+            "entry_time": pd.to_datetime(q.clinic_entry_time) if q.clinic_entry_time else None,
+            "completion_time": pd.to_datetime(q.completion_time) if q.completion_time else None,
+            "status": q.status_pelayanan
+        })
+    df = pd.DataFrame(data)
+    df['service_minutes'] = (df['completion_time'] - df['entry_time']).dt.total_seconds() / 60
+    poli_volume = df['poli'].value_counts(ascending=True).to_dict()
+    df_valid = df.dropna(subset=['service_minutes'])
+    avg_svc_poli = df_valid.groupby('poli')['service_minutes'].mean().round(1).sort_values(ascending=True).to_dict()
+    avg_svc_doc = df_valid.groupby('dokter')['service_minutes'].mean()
+    staff_eff = (60 / avg_svc_doc[avg_svc_doc > 0]).round(1).sort_values(ascending=True).to_dict() if not avg_svc_doc.empty else {}
+    active_docs = df['dokter'].unique().tolist()
+    idle_docs = [d.dokter for d in all_doctors if d.dokter not in active_docs]
+    summary = df.groupby('poli').agg(count=('status','count'), speed=('service_minutes','mean')).dropna()
+    corr_coef = round(summary['count'].corr(summary['speed']), 2) if len(summary) > 1 else 0
+    return {
+        "poli_volume": poli_volume, "poli_speed": avg_svc_poli, "staff_effectiveness": staff_eff,
+        "correlation": {"coef": corr_coef}, "ghost_rate": round((len(df[df['status']=='Terdaftar'])/len(df)*100), 1),
+        "idle_doctors": idle_docs, "total_active_doctors": len(active_docs), "total_doctors_registered": len(all_doctors)
+    }
 
 app.include_router(router_admin)
 app.include_router(router_public)

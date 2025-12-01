@@ -7,18 +7,19 @@ import qrcode
 import io
 import cv2
 import numpy as np
+import json
 
-# --- CONFIG ---
 API_URL = "http://127.0.0.1:8000"
 st.set_page_config(page_title="Sistem RS Pintar", layout="wide", page_icon="🏥")
 st.title("🏥 Sistem Manajemen Antrean RS")
 st.markdown("---")
 menu = st.sidebar.radio("Navigasi", ["📝 Pendaftaran Pasien", "📠 Scanner (Pos RS)", "📺 Layar Antrean TV", "📊 Dashboard Admin", "📈 Analisis Data"])
 
-# --- HELPERS ---
 def generate_qr(data):
+    # Data dikirim dalam bentuk string JSON agar lengkap
+    qr_content = json.dumps(data)
     qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(str(data))
+    qr.add_data(qr_content)
     qr.make(fit=True)
     return qr.make_image(fill_color="black", back_color="white")
 
@@ -31,9 +32,7 @@ def decode_qr_from_image(image_buffer):
         return data if data else None
     except: return None
 
-# =================================================================
-# 1. PENDAFTARAN
-# =================================================================
+# ... (Menu Pendaftaran) ...
 if menu == "📝 Pendaftaran Pasien":
     st.header("Layanan Pasien")
     t1, t2 = st.tabs(["Daftar Baru", "Cek Tiket"])
@@ -80,19 +79,30 @@ if menu == "📝 Pendaftaran Pasien":
                                         d = r.json()
                                         st.balloons()
                                         st.success("Terdaftar!")
+                                        
+                                        # Buat data QR Code Lengkap (JSON)
+                                        qr_data = {
+                                            "id": d['id'],
+                                            "nama": d['nama_pasien'],
+                                            "poli": d['poli'],
+                                            "dokter": d['dokter'],
+                                            "jadwal": d['doctor_schedule'],
+                                            "tgl": d['visit_date']
+                                        }
+                                        
                                         with st.container(border=True):
                                             st.markdown("#### 🎫 E-TIKET")
                                             st.divider()
                                             tc1, tc2 = st.columns([1, 2])
                                             with tc1:
-                                                buf = io.BytesIO(); generate_qr(d['id']).save(buf, format="PNG")
+                                                buf = io.BytesIO(); generate_qr(qr_data).save(buf, format="PNG")
                                                 st.image(buf, use_container_width=True)
-                                                st.caption(f"REF: {d['id']}")
                                             with tc2:
                                                 st.title(d['queue_number'])
                                                 st.write(f"**{d['nama_pasien']}**")
                                                 st.write(f"{d['poli']} | {d['dokter']}")
-                                                st.info("Simpan QR ini.")
+                                                st.write(f"Jadwal: {d['doctor_schedule']}")
+                                                st.info("Status: Terdaftar")
                                         if st.button("Selesai"): st.session_state['selected_doc'] = None; st.rerun()
                                     else: st.error(f"Gagal: {r.text}")
         except Exception as e: st.error(f"Error: {e}")
@@ -107,11 +117,14 @@ if menu == "📝 Pendaftaran Pasien":
                         st.subheader(t['queue_number'])
                         st.write(f"{t['nama_pasien']} ({t['status_pelayanan']})")
                         st.caption(f"{t['poli']} | {t['visit_date']}")
+                        
+                        # Generate QR Ulang (Data Lengkap)
+                        qrd = {"id": t['id'], "nama": t['nama_pasien'], "poli": t['poli'], "dokter": t['dokter'], "jadwal": t['doctor_schedule'], "tgl": t['visit_date']}
+                        buf = io.BytesIO(); generate_qr(qrd).save(buf, format="PNG")
+                        st.image(buf, width=150)
             else: st.warning("Tidak ditemukan.")
 
-# =================================================================
-# 2. SCANNER
-# =================================================================
+# ... (Menu Scanner Update Logic Parse JSON) ...
 elif menu == "📠 Scanner (Pos RS)":
     st.header("Scanner")
     t1, t2 = st.tabs(["Kamera", "Manual"])
@@ -121,14 +134,21 @@ elif menu == "📠 Scanner (Pos RS)":
         if img:
             res = decode_qr_from_image(img)
             if res:
-                st.success(f"QR: {res}")
-                if st.button(f"Proses {loc}?", key="bp"):
-                    r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": res, "location": loc})
+                # Coba parse JSON, ambil ID
+                scan_val = res
+                try:
+                    data_json = json.loads(res.replace("'", '"')) # Simple fix for single quotes
+                    scan_val = str(data_json.get("id", res))
+                except: pass
+                
+                st.success(f"QR Raw: {res}")
+                if st.button(f"Proses ID {scan_val} di {loc}?", key="bp"):
+                    r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": scan_val, "location": loc})
                     if r.status_code==200: st.success("Sukses!"); st.metric("Status", r.json()['current_status'])
                     else: st.error(r.json().get('detail', r.text))
-            else: st.error("QR Gagal.")
+            else: st.error("Gagal.")
     with t2:
-        mc = st.text_input("Kode", key="mc")
+        mc = st.text_input("Kode (ID/Queue)", key="mc")
         ml = st.selectbox("Posisi", ["arrival", "clinic", "finish"], key="ml")
         if st.button("Proses", key="bm"):
             if not mc.strip(): st.error("Isi kode!")
@@ -137,11 +157,9 @@ elif menu == "📠 Scanner (Pos RS)":
                 if r.status_code==200: st.success("Sukses!"); st.metric("Status", r.json()['current_status'])
                 else: st.error(r.json().get('detail', r.text))
 
-# =================================================================
-# 3. TV
-# =================================================================
+# ... (Sisa kode TV, Dashboard, Analisis SAMA) ...
 elif menu == "📺 Layar Antrean TV":
-    st.markdown("<h1 style='text-align: center;'>JADWAL ANTREAN</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>JADWAL ANTREAN RS</h1>", unsafe_allow_html=True)
     ph = st.empty()
     if st.checkbox("Auto Refresh", value=True):
         try:
@@ -160,27 +178,21 @@ elif menu == "📺 Layar Antrean TV":
                         if not waiting.empty:
                             st.info("🕒 MENUNGGU")
                             st.dataframe(waiting, use_container_width=True, hide_index=True)
-                    else: st.success("Kosong.")
+                    else: st.success("Ruang Tunggu Kosong.")
         except: pass
         time_lib.sleep(5); st.rerun()
 
-# =================================================================
-# 4. DASHBOARD ADMIN
-# =================================================================
 elif menu == "📊 Dashboard Admin":
     st.header("Admin Panel")
     t_stat, t_doc, t_pol, t_imp = st.tabs(["Statistik", "Kelola Dokter", "Kelola Poli", "Import"])
-    
     try: p_opts = [x['poli'] for x in requests.get(f"{API_URL}/public/polis").json()]
     except: p_opts = []
-
     with t_doc:
         st.subheader("Daftar Dokter")
         try:
             all_docs = requests.get(f"{API_URL}/admin/doctors").json()
             if all_docs: st.dataframe(pd.DataFrame(all_docs)[['doctor_id','dokter','poli','doctor_code']], use_container_width=True, hide_index=True)
         except: pass
-        
         with st.expander("➕ Tambah Dokter"):
             with st.form("add_doc"):
                 dn = st.text_input("Nama")
@@ -196,14 +208,12 @@ elif menu == "📊 Dashboard Admin":
                         r = requests.post(f"{API_URL}/admin/doctors", json=pl)
                         if r.status_code == 200: st.success("Sukses"); st.rerun()
                         else: st.error(r.json().get('detail', r.text))
-
         with st.expander("✏️ Edit Dokter"):
             ide = st.number_input("ID Edit", min_value=1, key="ide_in")
             if st.button("Load"):
                 r = requests.get(f"{API_URL}/admin/doctors/{ide}")
                 if r.status_code == 200: st.session_state['ed_data'] = r.json(); st.success("Loaded")
                 else: st.error("Not Found")
-            
             if 'ed_data' in st.session_state:
                 dd = st.session_state['ed_data']
                 with st.form("edit_doc"):
@@ -217,22 +227,19 @@ elif menu == "📊 Dashboard Admin":
                     ets = ec1.time_input("Start", value=t1_old)
                     ete = ec2.time_input("End", value=t2_old)
                     emx = st.number_input("Kuota", value=dd['max_patients'])
-                    
                     if st.form_submit_button("Update"):
-                        if not enm.strip(): st.error("Isi Nama!")
+                        if not enm.strip(): st.error("Nama wajib diisi!")
                         else:
                             upd = {"dokter": enm, "poli": epol, "practice_start_time": ets.strftime("%H:%M"), "practice_end_time": ete.strftime("%H:%M"), "max_patients": emx}
                             r = requests.put(f"{API_URL}/admin/doctors/{ide}", json=upd)
                             if r.status_code == 200: st.success("Updated"); del st.session_state['ed_data']; st.rerun()
                             else: st.error(r.json().get('detail', r.text))
-
         with st.expander("❌ Hapus Dokter"):
             did = st.number_input("ID Hapus", min_value=1, key="did_in")
             if st.button("Hapus"): 
                 r = requests.delete(f"{API_URL}/admin/doctors/{did}")
                 if r.status_code == 200: st.success("Deleted"); st.rerun()
                 else: st.error(r.text)
-
     with t_pol:
         st.subheader("Manajemen Poli")
         try:
@@ -240,7 +247,6 @@ elif menu == "📊 Dashboard Admin":
             p_names = [p['poli'] for p in curr_polis]
             st.dataframe(pd.DataFrame(curr_polis), use_container_width=True, hide_index=True)
         except: p_names = []
-
         with st.expander("➕ Tambah Poli"):
             pn = st.text_input("Nama Poli", key="pn")
             pp = st.text_input("Prefix", key="pp")
@@ -250,7 +256,6 @@ elif menu == "📊 Dashboard Admin":
                     r = requests.post(f"{API_URL}/admin/polis", json={"poli": pn, "prefix": pp})
                     if r.status_code==200: st.success("OK"); st.rerun()
                     else: st.error(r.json().get('detail', r.text))
-
         with st.expander("✏️ Edit Poli"):
             if p_names:
                 old_p = st.selectbox("Poli Lama", p_names, key="sel_old_p")
@@ -263,7 +268,6 @@ elif menu == "📊 Dashboard Admin":
                         r = requests.put(f"{API_URL}/admin/polis/{old_p}", json={"poli": final_nm, "prefix": new_pr})
                         if r.status_code==200: st.success("OK"); st.rerun()
                         else: st.error(r.json().get('detail', r.text))
-
         with st.expander("❌ Hapus Poli"):
             if p_names:
                 pd_del = st.selectbox("Pilih Hapus", p_names, key="sel_del")
@@ -271,14 +275,12 @@ elif menu == "📊 Dashboard Admin":
                     r = requests.delete(f"{API_URL}/admin/polis/{pd_del}")
                     if r.status_code == 200: st.success("Terhapus"); st.rerun()
                     else: st.error(r.text)
-
     with t_imp:
         cnt = st.number_input("Jml Data", value=10)
         if st.button("Start Import"):
             r = requests.get(f"{API_URL}/admin/import-random-data", params={"count": cnt})
             if r.status_code == 200: st.success(r.json()['message'])
             else: st.error(r.text)
-    
     with t_stat:
         tgl = st.date_input("Tanggal", value=datetime.today())
         if st.button("Refresh"): st.rerun()
@@ -287,11 +289,8 @@ elif menu == "📊 Dashboard Admin":
             st.dataframe(pd.DataFrame(d), use_container_width=True)
         except: pass
 
-# =================================================================
-# 5. ANALISIS
-# =================================================================
 elif menu == "📈 Analisis Data":
-    st.header("Analisis")
+    st.header("Analisis & Prediksi")
     if st.button("Refresh"): st.rerun()
     try:
         d = requests.get(f"{API_URL}/analytics/comprehensive-report").json()
