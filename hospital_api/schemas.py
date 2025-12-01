@@ -9,7 +9,7 @@ def validate_not_empty(v: str, field_name: str):
 
 class PoliCreate(BaseModel):
     poli: str = Field(..., min_length=3, examples=["Poli Mata"])
-    prefix: str = Field(..., min_length=2, max_length=5, examples=["MATA"])
+    prefix: str = Field(..., min_length=1, max_length=4, examples=["MATA"])
 
     @field_validator('poli')
     def check_poli_name(cls, v): return validate_not_empty(v, "Nama Poli")
