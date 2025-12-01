@@ -1,119 +1,128 @@
-from pydantic import BaseModel, Field
-from datetime import datetime, time, date
-from typing import List, Optional
-from enum import Enum
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing import Optional
+from datetime import date, datetime, time
 
-# --- PERUBAHAN 1: Enum Status dalam Bahasa Indonesia ---
-# Validasi sekarang akan memaksa penggunaan salah satu dari nilai ini.
-class QueueStatus(str, Enum):
-    menunggu = "menunggu"
-    sedang_dilayani = "sedang dilayani"
-    selesai = "selesai"
+# --- VALIDATOR HELPER ---
+def validate_not_empty(v: str, field_name: str):
+    if not v or not v.strip():
+        raise ValueError(f"{field_name} tidak boleh kosong atau hanya spasi.")
+    return v.strip()
 
-# --- Skema Dasar ---
+# ==========================================
+# 1. INPUT SCHEMAS
+# ==========================================
 
-class ServiceBase(BaseModel):
-    name: str
-    prefix: str = Field(..., max_length=4)
+class PoliCreate(BaseModel):
+    poli: str = Field(..., min_length=3, examples=["Poli Mata"])
+    prefix: str = Field(..., min_length=2, max_length=5, examples=["MATA"])
 
-class DoctorBase(BaseModel):
+    @field_validator('poli')
+    def check_poli_name(cls, v):
+        return validate_not_empty(v, "Nama Poli")
+
+    @field_validator('prefix')
+    def check_prefix(cls, v):
+        v = validate_not_empty(v, "Prefix")
+        if not v.isalpha():
+            raise ValueError('Prefix hanya boleh huruf (A-Z).')
+        return v.upper()
+
+class DoctorCreate(BaseModel):
+    dokter: str = Field(..., min_length=3, examples=["Dr. Strange"])
+    poli: str = Field(...)
+    practice_start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    practice_end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    max_patients: int = Field(default=20, ge=1)
+    doctor_id: Optional[int] = None
+
+    @field_validator('dokter')
+    def check_dokter_name(cls, v):
+        return validate_not_empty(v, "Nama Dokter")
+
+    @model_validator(mode='after')
+    def check_times(self):
+        try:
+            t1 = datetime.strptime(self.practice_start_time, "%H:%M").time()
+            t2 = datetime.strptime(self.practice_end_time, "%H:%M").time()
+            if t2 <= t1: raise ValueError('Jam Selesai harus lebih akhir dari Jam Mulai.')
+        except ValueError as e:
+            if "does not match format" in str(e): raise ValueError("Format jam salah")
+            raise e
+        return self
+
+class DoctorUpdate(BaseModel):
+    dokter: Optional[str] = None
+    poli: Optional[str] = None
+    max_patients: Optional[int] = Field(default=None, ge=1)
+    practice_start_time: Optional[str] = None
+    practice_end_time: Optional[str] = None
+
+    @field_validator('dokter')
+    def check_name(cls, v):
+        if v is not None:
+            return validate_not_empty(v, "Nama Dokter")
+        return v
+
+class RegistrationFinal(BaseModel):
+    nama_pasien: str = Field(..., min_length=3)
+    poli: str = Field(...)
+    doctor_id: int = Field(...)
+    visit_date: date = Field(...)
+
+    @field_validator('nama_pasien')
+    def check_pasien(cls, v):
+        return validate_not_empty(v, "Nama Pasien")
+
+    @field_validator('visit_date')
+    def check_date(cls, v):
+        if v < date.today(): raise ValueError('Tanggal tidak boleh masa lalu.')
+        return v
+
+class ScanRequest(BaseModel):
+    barcode_data: str = Field(..., min_length=1)
+    location: str = Field(..., pattern="^(arrival|clinic|finish)$")
+
+class UpdateQueueStatus(BaseModel):
+    action: str = Field(...)
+
+# ==========================================
+# 2. OUTPUT SCHEMAS
+# ==========================================
+
+class PoliSchema(BaseModel):
+    poli: str
+    prefix: str
+    model_config = ConfigDict(from_attributes=True)
+
+class DoctorSchema(BaseModel):
+    doctor_id: int
+    dokter: str
+    poli: str
     doctor_code: str
-    name: str
     practice_start_time: time
     practice_end_time: time
     max_patients: int
-    services: List[int]
+    model_config = ConfigDict(from_attributes=True)
 
-class PatientBase(BaseModel):
-    name: str
-
-class QueueBase(BaseModel):
-    # Menggunakan Enum Bahasa Indonesia dengan nilai default 'menunggu'
-    status: QueueStatus = QueueStatus.menunggu
-
-# --- Skema untuk Membuat Data (Create) ---
-
-class ServiceCreate(ServiceBase):
-    pass
-
-class DoctorCreate(DoctorBase):
-    pass
-
-# --- Skema untuk Memperbarui Data (Update) ---
-
-class ServiceUpdate(BaseModel):
-    name: Optional[str] = None
-    prefix: Optional[str] = Field(None, max_length=4)
-
-class DoctorUpdate(BaseModel):
-    doctor_code: Optional[str] = None
-    name: Optional[str] = None
-    practice_start_time: Optional[time] = None
-    practice_end_time: Optional[time] = None
-    max_patients: Optional[int] = None
-    services: Optional[List[int]] = None
-
-class QueueStatusUpdate(BaseModel):
-    # Menggunakan Enum Bahasa Indonesia untuk validasi input
-    status: QueueStatus
-
-# --- Skema Respons API (Model Lengkap dengan ID) ---
-
-class ServiceSchema(ServiceBase):
+class PelayananSchema(BaseModel):
     id: int
-    class Config:
-        from_attributes = True
+    nama_pasien: str
+    dokter: str
+    poli: str
+    visit_date: date
+    status_pelayanan: str
+    queue_number: str      
+    queue_sequence: int    
+    checkin_time: Optional[datetime] = None
+    clinic_entry_time: Optional[datetime] = None
+    completion_time: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
 
-class DoctorSchema(DoctorBase):
-    id: int
-    class Config:
-        from_attributes = True
-
-class PatientSchema(PatientBase):
-    id: int
-    class Config:
-        from_attributes = True
-
-class QueueSchema(QueueBase):
-    id: int
-    queue_id_display: str
-    queue_number: int
-    registration_time: datetime = Field(default_factory=datetime.now)
-    patient_id: int
-    service_id: int
-    doctor_id: int
-    class Config:
-        from_attributes = True
-
-# --- Skema untuk Registrasi & Tiket ---
-
-class RegistrationRequest(BaseModel):
-    patient_name: str
-    service_ids: List[int]
-    doctor_id: Optional[int] = None
-
-class Ticket(BaseModel):
-    service: ServiceSchema
-    queue_number: str
-    doctor: DoctorSchema
-
-class RegistrationResponse(BaseModel):
-    patient: PatientSchema
-    tickets: List[Ticket]
-
-# --- Skema Baru untuk Ketersediaan Dokter ---
-class DoctorAvailableSchema(DoctorSchema):
-    remaining_quota: int
-
-# --- Skema untuk Monitoring ---
-
-class ClinicStatus(BaseModel):
-    service_id: int
-    service_name: str
-    doctors_count: int
-    max_patients_total: int
-    patients_waiting: int
-    patients_serving: int
+class ClinicStats(BaseModel):
+    poli_name: str
+    total_doctors: int
     total_patients_today: int
-    density_percentage: float
-
+    patients_waiting: int
+    patients_being_served: int
+    patients_finished: int
+    model_config = ConfigDict(from_attributes=True)
