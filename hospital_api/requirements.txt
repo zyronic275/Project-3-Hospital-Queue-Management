@@ -9,8 +9,6 @@ numpy
 pydantic
 streamlit
 requests
-pytest
-httpx
 qrcode
 pillow
 opencv-python-headless
