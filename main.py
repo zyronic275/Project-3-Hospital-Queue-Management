@@ -1,16 +1,24 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi.responses import StreamingResponse # Ditambahkan: Untuk mengirim gambar QR
+from sqlalchemy.orm import Session, joinedload # Ditambahkan: joinedload untuk join data
 from typing import List, Optional
 from datetime import date
 from db import models
 from db import schemas
 from db.database import engine, get_db
 
+# --- Library QR Code ---
+import qrcode
+from io import BytesIO
+# qrcode.make_image menggunakan Pillow (PIL)
+# ---
+
 # create tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Hospital Queue System")
 
+# ... (Clinic, Doctor, Patient Endpoints tetap sama) ...
 # clinic endpoints
 @app.post("/clinics/", response_model=schemas.ClinicResponse, tags=["Clinics"])
 def create_clinic(clinic: schemas.ClinicCreate, db: Session = Depends(get_db)):
@@ -73,8 +81,63 @@ def register_visit(visit: schemas.VisitCreate, db: Session = Depends(get_db)):
     db.add(db_visit)
     db.commit()
     db.refresh(db_visit)
+    # Catatan: Endpoint ini sekarang mengembalikan ID Kunjungan (db_visit.id) yang diperlukan untuk membuat QR Code.
     return db_visit
 
+# --- ENDPOINT BARU: GENERATE QR CODE ---
+@app.get("/visits/{visit_id}/qr", tags=["Queue"])
+def generate_qr_code(visit_id: int, db: Session = Depends(get_db)):
+    
+    # 1. Fetch Visit data, termasuk Patient, Doctor, dan Clinic untuk informasi lengkap
+    # Catatan: Endpoint ini memerlukan 'relationship' di model SQLAlchemy Anda agar joinedload berfungsi.
+    visit = db.query(models.Visit).options(
+        joinedload(models.Visit.patient),
+        joinedload(models.Visit.doctor).joinedload(models.Doctor.clinic)
+    ).filter(models.Visit.id == visit_id).first()
+
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    if not visit.patient or not visit.doctor or not visit.doctor.clinic:
+        raise HTTPException(status_code=500, detail="Incomplete data (Patient/Doctor/Clinic not found)")
+
+    # 2. Tentukan Prefix (diambil dari huruf pertama nama klinik)
+    # ASUMSI: Karena model Anda belum memiliki field prefix, kita gunakan huruf pertama nama klinik.
+    # REKOMENDASI: Tambahkan kolom `prefix` di tabel `clinics` untuk penomoran yang stabil (misal: 'A' untuk Poli Anak, 'G' untuk Poli Gigi).
+    try:
+        clinic_name = visit.doctor.clinic.name
+        prefix = clinic_name[0].upper() if clinic_name else 'Q'
+    except Exception:
+        prefix = 'Q' # Default jika gagal
+
+    # Format nomor antrean (misal: A001)
+    formatted_queue = f"{prefix}{visit.queue_number:03d}"
+    
+    # 3. Data yang dienkripsi ke dalam QR Code
+    # Data ini berisi NIK, No. Antrean, dan ID Kunjungan
+    qr_data = f"Antrean:{formatted_queue}|NIK:{visit.patient.nik}|VisitID:{visit.id}"
+    
+    # 4. Generate QR Code Image
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # 5. Save gambar ke buffer memori
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    
+    # 6. Kirim gambar sebagai respons file
+    return StreamingResponse(buffer, media_type="image/png")
+
+# ... (Endpoints get_queue dan update_visit_status tetap sama) ...
 @app.get("/visits/", response_model=List[schemas.VisitResponse], tags=["Queue"])
 def get_queue(date_filter: Optional[date] = None, doctor_id: Optional[int] = None, db: Session = Depends(get_db)):
     query = db.query(models.Visit)
