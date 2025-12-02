@@ -8,15 +8,19 @@ import io
 import cv2
 import numpy as np
 import json
+import plotly.express as px  # Library Chart Baru
 
+# --- KONFIGURASI ---
 API_URL = "http://127.0.0.1:8000"
 st.set_page_config(page_title="Sistem RS Pintar", layout="wide", page_icon="🏥")
+
 st.title("🏥 Sistem Manajemen Antrean RS")
 st.markdown("---")
+
 menu = st.sidebar.radio("Navigasi", ["📝 Pendaftaran Pasien", "📠 Scanner (Pos RS)", "📺 Layar Antrean TV", "📊 Dashboard Admin", "📈 Analisis Data"])
 
+# --- HELPERS ---
 def generate_qr(data):
-    # Data dikirim dalam bentuk string JSON agar lengkap
     qr_content = json.dumps(data)
     qr = qrcode.QRCode(version=1, box_size=10, border=4)
     qr.add_data(qr_content)
@@ -32,7 +36,9 @@ def decode_qr_from_image(image_buffer):
         return data if data else None
     except: return None
 
-# ... (Menu Pendaftaran) ...
+# =================================================================
+# 1. PENDAFTARAN
+# =================================================================
 if menu == "📝 Pendaftaran Pasien":
     st.header("Layanan Pasien")
     t1, t2 = st.tabs(["Daftar Baru", "Cek Tiket"])
@@ -79,16 +85,8 @@ if menu == "📝 Pendaftaran Pasien":
                                         d = r.json()
                                         st.balloons()
                                         st.success("Terdaftar!")
-                                        
-                                        # Buat data QR Code Lengkap (JSON)
-                                        qr_data = {
-                                            "id": d['id'],
-                                            "nama": d['nama_pasien'],
-                                            "poli": d['poli'],
-                                            "dokter": d['dokter'],
-                                            "jadwal": d['doctor_schedule'],
-                                            "tgl": d['visit_date']
-                                        }
+                                        # Data QR JSON
+                                        qr_data = {"id": d['id'], "nama": d['nama_pasien'], "poli": d['poli'], "dokter": d['dokter'], "jadwal": d['doctor_schedule'], "tgl": d['visit_date']}
                                         
                                         with st.container(border=True):
                                             st.markdown("#### 🎫 E-TIKET")
@@ -97,12 +95,13 @@ if menu == "📝 Pendaftaran Pasien":
                                             with tc1:
                                                 buf = io.BytesIO(); generate_qr(qr_data).save(buf, format="PNG")
                                                 st.image(buf, use_container_width=True)
+                                                st.caption(f"REF: {d['id']}")
                                             with tc2:
                                                 st.title(d['queue_number'])
                                                 st.write(f"**{d['nama_pasien']}**")
                                                 st.write(f"{d['poli']} | {d['dokter']}")
                                                 st.write(f"Jadwal: {d['doctor_schedule']}")
-                                                st.info("Status: Terdaftar")
+                                                st.info("Simpan QR ini.")
                                         if st.button("Selesai"): st.session_state['selected_doc'] = None; st.rerun()
                                     else: st.error(f"Gagal: {r.text}")
         except Exception as e: st.error(f"Error: {e}")
@@ -117,14 +116,15 @@ if menu == "📝 Pendaftaran Pasien":
                         st.subheader(t['queue_number'])
                         st.write(f"{t['nama_pasien']} ({t['status_pelayanan']})")
                         st.caption(f"{t['poli']} | {t['visit_date']}")
-                        
-                        # Generate QR Ulang (Data Lengkap)
+                        # Re-generate QR
                         qrd = {"id": t['id'], "nama": t['nama_pasien'], "poli": t['poli'], "dokter": t['dokter'], "jadwal": t['doctor_schedule'], "tgl": t['visit_date']}
                         buf = io.BytesIO(); generate_qr(qrd).save(buf, format="PNG")
                         st.image(buf, width=150)
             else: st.warning("Tidak ditemukan.")
 
-# ... (Menu Scanner Update Logic Parse JSON) ...
+# =================================================================
+# 2. SCANNER
+# =================================================================
 elif menu == "📠 Scanner (Pos RS)":
     st.header("Scanner")
     t1, t2 = st.tabs(["Kamera", "Manual"])
@@ -134,21 +134,21 @@ elif menu == "📠 Scanner (Pos RS)":
         if img:
             res = decode_qr_from_image(img)
             if res:
-                # Coba parse JSON, ambil ID
+                # Parse JSON QR
                 scan_val = res
                 try:
-                    data_json = json.loads(res.replace("'", '"')) # Simple fix for single quotes
+                    data_json = json.loads(res.replace("'", '"'))
                     scan_val = str(data_json.get("id", res))
                 except: pass
                 
-                st.success(f"QR Raw: {res}")
-                if st.button(f"Proses ID {scan_val} di {loc}?", key="bp"):
+                st.success(f"QR ID: {scan_val}")
+                if st.button(f"Proses di {loc}?", key="bp"):
                     r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": scan_val, "location": loc})
                     if r.status_code==200: st.success("Sukses!"); st.metric("Status", r.json()['current_status'])
                     else: st.error(r.json().get('detail', r.text))
             else: st.error("Gagal.")
     with t2:
-        mc = st.text_input("Kode (ID/Queue)", key="mc")
+        mc = st.text_input("Kode", key="mc")
         ml = st.selectbox("Posisi", ["arrival", "clinic", "finish"], key="ml")
         if st.button("Proses", key="bm"):
             if not mc.strip(): st.error("Isi kode!")
@@ -157,7 +157,9 @@ elif menu == "📠 Scanner (Pos RS)":
                 if r.status_code==200: st.success("Sukses!"); st.metric("Status", r.json()['current_status'])
                 else: st.error(r.json().get('detail', r.text))
 
-# ... (Sisa kode TV, Dashboard, Analisis SAMA) ...
+# =================================================================
+# 3. TV
+# =================================================================
 elif menu == "📺 Layar Antrean TV":
     st.markdown("<h1 style='text-align: center;'>JADWAL ANTREAN RS</h1>", unsafe_allow_html=True)
     ph = st.empty()
@@ -182,11 +184,15 @@ elif menu == "📺 Layar Antrean TV":
         except: pass
         time_lib.sleep(5); st.rerun()
 
+# =================================================================
+# 4. DASHBOARD ADMIN
+# =================================================================
 elif menu == "📊 Dashboard Admin":
     st.header("Admin Panel")
     t_stat, t_doc, t_pol, t_imp = st.tabs(["Statistik", "Kelola Dokter", "Kelola Poli", "Import"])
     try: p_opts = [x['poli'] for x in requests.get(f"{API_URL}/public/polis").json()]
     except: p_opts = []
+    
     with t_doc:
         st.subheader("Daftar Dokter")
         try:
@@ -289,20 +295,78 @@ elif menu == "📊 Dashboard Admin":
             st.dataframe(pd.DataFrame(d), use_container_width=True)
         except: pass
 
+# =================================================================
+# 5. ANALISIS DATA (VISUALISASI PRO)
+# =================================================================
 elif menu == "📈 Analisis Data":
-    st.header("Analisis & Prediksi")
-    if st.button("Refresh"): st.rerun()
+    st.header("📈 Analisis & Wawasan Rumah Sakit")
+    
+    if st.button("🔄 Segarkan Data Analisis", key="btn_refresh_anl"):
+        st.rerun()
+        
     try:
-        d = requests.get(f"{API_URL}/analytics/comprehensive-report").json()
-        if d.get("status") == "No Data": st.warning("No Data")
+        with st.spinner("Menghitung statistik cerdas..."):
+            d = requests.get(f"{API_URL}/analytics/comprehensive-report").json()
+            
+        if d.get("status") == "No Data":
+            st.warning("Belum ada cukup data untuk dianalisis.")
         else:
-            k1,k2,k3 = st.columns(3)
-            k1.metric("Ghosting", f"{d['ghost_rate']}%")
-            k2.metric("Active Docs", f"{d['total_active_doctors']}/{d['total_doctors_registered']}")
-            k3.metric("Corr", d['correlation']['coef'])
-            c1,c2 = st.columns(2)
-            with c1: st.subheader("Volume"); st.bar_chart(d['poli_volume'])
-            with c2: st.subheader("Speed"); st.bar_chart(d['poli_speed'])
-            st.subheader("Effectiveness"); st.bar_chart(d['staff_effectiveness'])
-            if d['idle_doctors']: st.error(f"Idle: {', '.join(d['idle_doctors'])}")
-    except Exception as e: st.error(f"Err: {e}")
+            # --- KPI UTAMA ---
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Ghosting Rate", f"{d['ghost_rate']}%", help="% Pasien daftar tapi tidak check-in")
+            k2.metric("Dokter Aktif", f"{d['total_active_doctors']} / {d['total_doctors_registered']}")
+            k3.metric("Korelasi Antrean", d['correlation']['coef'], help="Nilai mendekati 1: Semakin ramai semakin lambat.")
+            
+            # Interpretasi Korelasi
+            expl_corr = "Netral"
+            if d['correlation']['coef'] > 0.5: expl_corr = "🔥 Overload (Lambat)"
+            elif d['correlation']['coef'] < -0.5: expl_corr = "⚡ Efisien (Cepat)"
+            k4.metric("Status Beban", expl_corr)
+            
+            st.divider()
+
+            # --- BAGIAN 1: POLIKLINIK (INTERAKTIF) ---
+            st.subheader("1. Kinerja Poliklinik")
+            c_pol1, c_pol2 = st.columns(2)
+            
+            with c_pol1:
+                st.markdown("##### 📊 Poli Teramai (Volume)")
+                df_vol = pd.DataFrame(list(d['poli_volume'].items()), columns=['Poli', 'Total Pasien'])
+                # Plotly Chart
+                fig_vol = px.bar(df_vol, x='Poli', y='Total Pasien', color='Total Pasien', color_continuous_scale='Oranges')
+                st.plotly_chart(fig_vol, use_container_width=True)
+                
+            with c_pol2:
+                st.markdown("##### ⏱️ Kecepatan Pelayanan (Menit)")
+                df_spd = pd.DataFrame(list(d['poli_speed'].items()), columns=['Poli', 'Rata-rata Menit'])
+                # Warna: Hijau (Cepat) -> Merah (Lambat)
+                fig_spd = px.bar(df_spd, x='Rata-rata Menit', y='Poli', orientation='h', color='Rata-rata Menit', color_continuous_scale='RdYlGn_r')
+                st.plotly_chart(fig_spd, use_container_width=True)
+                
+                # Interpretasi Text
+                fastest = df_spd.iloc[0]
+                st.success(f"🚀 **Tercepat:** {fastest['Poli']} ({fastest['Rata-rata Menit']} min)")
+
+            st.divider()
+
+            # --- BAGIAN 2: DOKTER (INTERAKTIF) ---
+            st.subheader("2. Kinerja Dokter")
+            
+            t_doc1, t_doc2 = st.tabs(["⭐ Efektivitas", "💤 Dokter Idle"])
+            
+            with t_doc1:
+                st.caption("Metrik: Throughput (Berapa pasien yang bisa ditangani per jam)")
+                df_eff = pd.DataFrame(list(d['staff_effectiveness'].items()), columns=['Dokter', 'Pasien/Jam'])
+                fig_eff = px.bar(df_eff, x='Dokter', y='Pasien/Jam', color='Pasien/Jam', color_continuous_scale='Viridis')
+                st.plotly_chart(fig_eff, use_container_width=True)
+                
+            with t_doc2:
+                if d['idle_doctors']:
+                    st.error(f"Terdapat {len(d['idle_doctors'])} dokter yang belum melayani pasien sama sekali:")
+                    for doc in d['idle_doctors']:
+                        st.write(f"- 🔴 **{doc}**")
+                else:
+                    st.success("Luar biasa! Semua dokter aktif bekerja.")
+
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat memuat analisis: {e}")
