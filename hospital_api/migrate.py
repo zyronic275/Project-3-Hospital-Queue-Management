@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 import os
 import random
 
+## FILE YANG MENGATUR FUNGSI PANGGIL DATA 
+
 # Import models
 from storage import Service, Doctor, Patient, Queue
 
