@@ -39,7 +39,7 @@ def parse_datetime_smart(date_val, time_val=None):
 def get_public_polis(db: Session = Depends(get_db)): return db.query(storage.TabelPoli).all()
 
 @router_public.get("/available-doctors", response_model=List[schemas.DoctorSchema])
-def get_public_doctors(poli_name: str, visit_date: date, db: Session = Depends(get_db)): 
+def get_public_doctors(poli_name: str, db: Session = Depends(get_db)): 
     return db.query(storage.TabelDokter).filter(storage.TabelDokter.poli == poli_name).all()
 
 # MODIFIKASI: Sertakan jadwal dokter dalam response
