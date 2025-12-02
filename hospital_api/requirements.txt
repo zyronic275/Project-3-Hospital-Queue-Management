@@ -12,3 +12,4 @@ requests
 qrcode
 pillow
 opencv-python-headless
+plotly 
