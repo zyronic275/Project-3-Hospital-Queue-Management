@@ -123,39 +123,74 @@ if menu == "📝 Pendaftaran Pasien":
             else: st.warning("Tidak ditemukan.")
 
 # =================================================================
-# 2. SCANNER
+# 2. SCANNER (AUTO-PROCESS)
 # =================================================================
 elif menu == "📠 Scanner (Pos RS)":
-    st.header("Scanner")
-    t1, t2 = st.tabs(["Kamera", "Manual"])
-    with t1:
-        loc = st.radio("Posisi:", ["arrival", "clinic", "finish"], horizontal=True, format_func=lambda x: x.upper(), key="rc")
-        img = st.camera_input("Cam", key="ci")
+    st.header("Scanner Barcode (Auto-Process)")
+    
+    # Fungsi Wrapper untuk memanggil API (Biar tidak duplikat kode)
+    def process_scan_api(code_data, location_pos):
+        # Coba parse JSON jika formatnya JSON (dari QR Generator kita)
+        final_code = code_data
+        try:
+            data_json = json.loads(code_data.replace("'", '"'))
+            final_code = str(data_json.get("id", code_data))
+        except: pass
+
+        try:
+            with st.spinner(f"Memproses Tiket {final_code} di {location_pos}..."):
+                r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": final_code, "location": location_pos})
+                
+            if r.status_code == 200:
+                st.balloons() # Efek visual sukses
+                st.success(f"✅ **SUKSES!** {r.json()['message']}")
+                
+                # Tampilkan status besar
+                status = r.json()['current_status']
+                color = "green" if status == "Selesai" else "orange"
+                st.markdown(f"### Status Sekarang: :{color}[{status}]")
+            else:
+                st.error(f"❌ **GAGAL:** {r.json().get('detail', r.text)}")
+        except Exception as e:
+            st.error(f"Error Sistem: {e}")
+
+    # --- TAMPILAN UTAMA ---
+    t_cam, t_man = st.tabs(["📷 Kamera Otomatis", "⌨️ Input Manual"])
+    
+    # --- TAB 1: KAMERA ---
+    with t_cam:
+        st.info("Pilih Lokasi dulu, lalu ambil foto. Sistem akan langsung memproses.")
+        # Lokasi dipilih DULUAN sebelum scan
+        loc = st.radio("Posisi:", ["arrival", "clinic", "finish"], horizontal=True, format_func=lambda x: x.upper(), key="rc_auto")
+        
+        # Input Kamera
+        img = st.camera_input("Arahkan QR Code", key="ci_auto")
+        
         if img:
+            # Langsung proses begitu gambar ada
             res = decode_qr_from_image(img)
             if res:
-                # Parse JSON QR
-                scan_val = res
-                try:
-                    data_json = json.loads(res.replace("'", '"'))
-                    scan_val = str(data_json.get("id", res))
-                except: pass
-                
-                st.success(f"QR ID: {scan_val}")
-                if st.button(f"Proses di {loc}?", key="bp"):
-                    r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": scan_val, "location": loc})
-                    if r.status_code==200: st.success("Sukses!"); st.metric("Status", r.json()['current_status'])
-                    else: st.error(r.json().get('detail', r.text))
-            else: st.error("Gagal.")
-    with t2:
-        mc = st.text_input("Kode", key="mc")
-        ml = st.selectbox("Posisi", ["arrival", "clinic", "finish"], key="ml")
-        if st.button("Proses", key="bm"):
-            if not mc.strip(): st.error("Isi kode!")
+                st.caption(f"Terdeteksi: {res}")
+                process_scan_api(res, loc)
             else:
-                r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": mc, "location": ml})
-                if r.status_code==200: st.success("Sukses!"); st.metric("Status", r.json()['current_status'])
-                else: st.error(r.json().get('detail', r.text))
+                st.warning("⚠️ QR Code tidak terbaca. Coba lagi.")
+
+    # --- TAB 2: MANUAL (SCANNER GUN) ---
+    with t_man:
+        st.info("Pilih Lokasi, klik kolom input, lalu Scan (atau ketik kode & Enter).")
+        ml = st.selectbox("Posisi", ["arrival", "clinic", "finish"], key="ml_auto", format_func=lambda x: x.upper())
+        
+        # Fungsi Callback untuk Input Manual
+        def on_input_change():
+            # Ambil nilai dari session state
+            code = st.session_state.m_code_auto
+            if code:
+                process_scan_api(code, ml)
+                # Opsional: Kosongkan input setelah sukses (biar siap scan lagi)
+                st.session_state.m_code_auto = "" 
+
+        # Input Text dengan callback on_change
+        st.text_input("Scan/Input Kode di sini", key="m_code_auto", on_change=on_input_change)
 
 # =================================================================
 # 3. TV
