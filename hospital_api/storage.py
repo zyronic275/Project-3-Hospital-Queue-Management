@@ -11,7 +11,8 @@ DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME", "hospital_db")
 
-DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Ganti 'PASSWORD_ANDA' dengan password MySQL user root yang sebenarnya
+DB_URL = "mysql+pymysql://root:abel0908@localhost/hospital_queue"
 
 engine = create_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

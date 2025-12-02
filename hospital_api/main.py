@@ -5,9 +5,9 @@ from datetime import datetime, date, time
 import pandas as pd
 import numpy as np
 import re
-import storage
-import schemas
-import csv_utils
+from hospital_api import storage
+from hospital_api import schemas
+from hospital_api import csv_utils
 
 storage.init_db()
 app = FastAPI(title="Sistem RS: Barcode & Analytics Pro")
