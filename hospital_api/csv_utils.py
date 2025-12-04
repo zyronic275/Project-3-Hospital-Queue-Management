@@ -7,12 +7,18 @@ FILE_DOKTER = "tabel_dokter_normal.csv"
 FILE_PELAYANAN = "tabel_pelayanan_normal.csv"
 
 def get_merged_random_data(count: int):
+    """
+    Fungsi ini opsional di mode Random Faker, tapi tetap disimpan
+    untuk jaga-jaga jika ingin kembali ke mode import murni.
+    """
     if not (os.path.exists(FILE_POLI) and os.path.exists(FILE_DOKTER) and os.path.exists(FILE_PELAYANAN)):
         raise FileNotFoundError("File CSV tidak lengkap.")
+    
     df_poli = pd.read_csv(FILE_POLI)
     df_dokter = pd.read_csv(FILE_DOKTER)
-    df_layanan = pd.read_csv(FILE_PELAYANAN)
-    
+    df_layanan = pd.read_csv(FILE_PELAYANAN, on_bad_lines='skip') # Skip error line jika ada
+
+    # Clean Whitespace
     for df in [df_poli, df_dokter, df_layanan]:
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].str.strip()
@@ -27,14 +33,26 @@ def get_merged_random_data(count: int):
     return merged.sample(n=min(count, len(merged)))
 
 def append_to_csv(filename: str, data: dict):
+    """
+    PENTING: Fungsi ini dipakai oleh Admin Panel untuk update CSV.
+    Pastikan urutan field sesuai dengan header CSV Anda.
+    """
     file_exists = os.path.isfile(filename)
     field_order = []
-    if "dokter" in filename: field_order = ["dokter", "doctor_id", "practice_start_time", "practice_end_time", "doctor_code", "max_patients", "poli", "prefix"]
-    elif "poli" in filename: field_order = ["poli", "prefix"]
-    elif "pelayanan" in filename: field_order = ["nama_pasien", "poli", "dokter", "visit_date", "checkin_time", "clinic_entry_time", "completion_time", "status_pelayanan", "queue_number", "queue_sequence"]
+    
+    if "dokter" in filename: 
+        # Pastikan ada 'prefix' di sini
+        field_order = ["dokter", "doctor_id", "practice_start_time", "practice_end_time", "doctor_code", "max_patients", "poli", "prefix"]
+    elif "poli" in filename: 
+        field_order = ["poli", "prefix"]
+    elif "pelayanan" in filename: 
+        field_order = ["nama_pasien", "poli", "dokter", "visit_date", "checkin_time", "clinic_entry_time", "completion_time", "status_pelayanan", "queue_number", "queue_sequence"]
     
     with open(filename, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=field_order)
+        # Tulis header hanya jika file baru dibuat
         if not file_exists: writer.writeheader()
+        
+        # Filter data agar sesuai kolom
         row = {k: v for k, v in data.items() if k in field_order}
         writer.writerow(row)

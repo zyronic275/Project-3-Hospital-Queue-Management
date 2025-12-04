@@ -107,91 +107,102 @@ if menu == "📝 Pendaftaran Pasien":
         except Exception as e: st.error(f"Error: {e}")
 
     with t2:
-        snm = st.text_input("Nama Pasien", key="src_nm")
-        if st.button("Cari"):
+        snm = st.text_input("Cari Nama Pasien", key="src_nm", placeholder="Contoh: Budi")
+        if st.button("Cari Tiket", use_container_width=True):
             r = requests.get(f"{API_URL}/public/find-ticket", params={"nama": snm})
             if r.status_code == 200:
-                for t in r.json():
+                results = r.json()
+                st.success(f"Ditemukan {len(results)} tiket.")
+                
+                for t in results:
                     with st.container(border=True):
-                        st.subheader(t['queue_number'])
-                        st.write(f"{t['nama_pasien']} ({t['status_pelayanan']})")
-                        st.caption(f"{t['poli']} | {t['visit_date']}")
-                        # Re-generate QR
-                        qrd = {"id": t['id'], "nama": t['nama_pasien'], "poli": t['poli'], "dokter": t['dokter'], "jadwal": t['doctor_schedule'], "tgl": t['visit_date']}
-                        buf = io.BytesIO(); generate_qr(qrd).save(buf, format="PNG")
-                        st.image(buf, width=150)
-            else: st.warning("Tidak ditemukan.")
+                        cQ, cI = st.columns([1, 4])
+                        with cQ:
+                            # Generate QR
+                            qr_data = {
+                                "id": t['id'],
+                                "nama": t['nama_pasien'],
+                                "antrean": t['queue_number']
+                            }
+                            buf = io.BytesIO()
+                            generate_qr(qr_data).save(buf, format="PNG")
+                            st.image(buf, use_container_width=True)
+                            st.caption(f"ID: {t['id']}")
+                        
+                        with cI:
+                            st.subheader(f"{t['queue_number']}")
+                            
+                            # LOGIKA STATUS YANG SUDAH DIPERBAIKI
+                            status = t['status_pelayanan']
+                            if status == "Menunggu": 
+                                st.warning(f"🕒 {status}")
+                            elif status == "Melayani": 
+                                st.success(f"🔊 {status}")
+                            elif status == "Selesai": 
+                                st.info(f"✅ {status}")
+                            else: 
+                                st.markdown(f"📝 **{status}**")
+
+                            st.divider()
+                            st.markdown(f"**Pasien:** {t['nama_pasien']}")
+                            st.markdown(f"**Poli:** {t['poli']}")
+                            st.markdown(f"**Dokter:** {t['dokter']}")
+                            st.caption(f"📅 {t['visit_date']}")
+            else: 
+                st.warning("Tiket tidak ditemukan. Cek kembali nama Anda.")
 
 # =================================================================
-# 2. SCANNER (AUTO-PROCESS)
+# 2. SCANNER (MODIFIKASI: SCAN STRING / NOMOR ANTREAN)
 # =================================================================
 elif menu == "📠 Scanner (Pos RS)":
-    st.header("Scanner Barcode (Auto-Process)")
+    st.header("Scanner Barcode")
+    t_cam, t_man = st.tabs(["📷 Kamera", "⌨️ Manual"])
     
-    # Fungsi Wrapper untuk memanggil API (Biar tidak duplikat kode)
-    def process_scan_api(code_data, location_pos):
-        # Coba parse JSON jika formatnya JSON (dari QR Generator kita)
-        final_code = code_data
-        try:
-            data_json = json.loads(code_data.replace("'", '"'))
-            final_code = str(data_json.get("id", code_data))
-        except: pass
-
-        try:
-            with st.spinner(f"Memproses Tiket {final_code} di {location_pos}..."):
-                r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": final_code, "location": location_pos})
-                
-            if r.status_code == 200:
-                st.balloons() # Efek visual sukses
-                st.success(f"✅ **SUKSES!** {r.json()['message']}")
-                
-                # Tampilkan status besar
-                status = r.json()['current_status']
-                color = "green" if status == "Selesai" else "orange"
-                st.markdown(f"### Status Sekarang: :{color}[{status}]")
-            else:
-                st.error(f"❌ **GAGAL:** {r.json().get('detail', r.text)}")
-        except Exception as e:
-            st.error(f"Error Sistem: {e}")
-
-    # --- TAMPILAN UTAMA ---
-    t_cam, t_man = st.tabs(["📷 Kamera Otomatis", "⌨️ Input Manual"])
-    
-    # --- TAB 1: KAMERA ---
     with t_cam:
-        st.info("Pilih Lokasi dulu, lalu ambil foto. Sistem akan langsung memproses.")
-        # Lokasi dipilih DULUAN sebelum scan
-        loc = st.radio("Posisi:", ["arrival", "clinic", "finish"], horizontal=True, format_func=lambda x: x.upper(), key="rc_auto")
-        
-        # Input Kamera
-        img = st.camera_input("Arahkan QR Code", key="ci_auto")
-        
+        loc = st.radio("Posisi:", ["arrival", "clinic", "finish"], horizontal=True, format_func=lambda x: x.upper(), key="rc")
+        img = st.camera_input("Cam", key="ci")
         if img:
-            # Langsung proses begitu gambar ada
             res = decode_qr_from_image(img)
             if res:
-                st.caption(f"Terdeteksi: {res}")
-                process_scan_api(res, loc)
-            else:
-                st.warning("⚠️ QR Code tidak terbaca. Coba lagi.")
+                scan_val = res
+                # LOGIKA BARU: Coba ambil 'antrean' dari JSON, bukan ID
+                try:
+                    # Ganti kutip satu jadi dua agar valid JSON
+                    data_json = json.loads(res.replace("'", '"'))
+                    # Ambil key 'antrean' (Queue Number), kalau gak ada ambil raw
+                    scan_val = str(data_json.get("antrean", res))
+                except: 
+                    pass # Kalau bukan JSON, pakai text mentah
+                
+                st.success(f"Terdeteksi: **{scan_val}**")
+                
+                if st.button(f"Proses {loc}?", key="bp"):
+                    # Kirim data string ke API
+                    r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": scan_val, "location": loc})
+                    
+                    if r.status_code==200: 
+                        st.success("✅ Sukses!")
+                        st.metric("Status", r.json()['current_status'])
+                    else: 
+                        st.error(r.json().get('detail', r.text))
+            else: 
+                st.error("Gagal baca QR.")
 
-    # --- TAB 2: MANUAL (SCANNER GUN) ---
     with t_man:
-        st.info("Pilih Lokasi, klik kolom input, lalu Scan (atau ketik kode & Enter).")
-        ml = st.selectbox("Posisi", ["arrival", "clinic", "finish"], key="ml_auto", format_func=lambda x: x.upper())
+        st.info("Masukkan Nomor Antrean (Contoh: GIGI-001-005).")
+        mc = st.text_input("Nomor Antrean", key="mc")
+        ml = st.selectbox("Posisi", ["arrival", "clinic", "finish"], key="ml")
         
-        # Fungsi Callback untuk Input Manual
-        def on_input_change():
-            # Ambil nilai dari session state
-            code = st.session_state.m_code_auto
-            if code:
-                process_scan_api(code, ml)
-                # Opsional: Kosongkan input setelah sukses (biar siap scan lagi)
-                st.session_state.m_code_auto = "" 
-
-        # Input Text dengan callback on_change
-        st.text_input("Scan/Input Kode di sini", key="m_code_auto", on_change=on_input_change)
-
+        if st.button("Proses", key="bm"):
+            if not mc.strip(): 
+                st.error("Isi Nomor Antrean!")
+            else:
+                r = requests.post(f"{API_URL}/ops/scan-barcode", json={"barcode_data": mc, "location": ml})
+                if r.status_code==200: 
+                    st.success("✅ Sukses!")
+                    st.metric("Status", r.json()['current_status'])
+                else: 
+                    st.error(r.json().get('detail', r.text))
 # =================================================================
 # 3. TV
 # =================================================================

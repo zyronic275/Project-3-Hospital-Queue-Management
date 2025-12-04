@@ -14,7 +14,7 @@ def validate_not_empty(v: str, field_name: str):
 
 class PoliCreate(BaseModel):
     poli: str = Field(..., min_length=3)
-    prefix: str = Field(..., min_length=1, max_length=5)
+    prefix: str = Field(..., min_length=1, max_length=4)
 
     @field_validator('poli')
     def check_poli_name(cls, v): return validate_not_empty(v, "Nama Poli")
@@ -117,13 +117,15 @@ class RegistrationFinal(BaseModel):
     )
 
 class ScanRequest(BaseModel):
-    barcode_data: str = Field(..., min_length=1)
+    # Hapus validasi integer/ID, fokus ke String
+    barcode_data: str = Field(..., description="Nomor Antrean (Contoh: GIGI-001-001)")
     location: str = Field(..., pattern="^(arrival|clinic|finish)$")
 
+    # KONFIGURASI SWAGGER UI (FIXED)
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "barcode_data": "105",
+                "barcode_data": "GIGI-001-001", # Contoh String (Bukan ID lagi)
                 "location": "arrival"
             }
         }
