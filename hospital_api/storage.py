@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 
 load_dotenv()
 
+# Konfigurasi Database
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -24,7 +25,9 @@ def init_db():
 class TabelPoli(Base):
     __tablename__ = "tabel_poli_normal"
     poli = Column(String(100), primary_key=True, index=True)
-    prefix = Column(String(10))
+    
+    prefix = Column(String(10), unique=True) 
+    
     dokters = relationship("TabelDokter", back_populates="poli_rel")
 
 class TabelDokter(Base):
@@ -53,6 +56,10 @@ class TabelPelayanan(Base):
     status_pelayanan = Column(String(50))
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
+    
+    # [BARU] Kolom Catatan Medis
+    catatan_medis = Column(String(255), nullable=True)
+    
     dokter_rel = relationship("TabelDokter", back_populates="pelayanans")
 
 class TabelGabungan(Base):
@@ -71,3 +78,6 @@ class TabelGabungan(Base):
     status_pelayanan = Column(String(50))
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
+    
+    # [BARU] Kolom Catatan Medis (untuk Analytics)
+    catatan_medis = Column(String(255), nullable=True)
