@@ -109,45 +109,63 @@ if menu == "📝 Pendaftaran Pasien":
 
     with t2:
         st.subheader("🔍 Cari Tiket Saya")
-        snm = st.text_input("Masukkan Nama Pasien", key="src_nm")
-        if st.button("Cari Tiket", use_container_width=True):
-            r = requests.get(f"{API_URL}/public/find-ticket", params={"nama": snm})
-            if r.status_code == 200:
-                results = r.json()
-                st.success(f"Ditemukan {len(results)} tiket.")
-                
-                for t in results:
-                    with st.container(border=True):
-                        cQ, cI = st.columns([1, 4])
-                        with cQ:
-                            # --- UPDATE: GENERATE QR DI HASIL PENCARIAN ---
-                            qr_data = {
-                                "id": t['id'],
-                                "nama": t['nama_pasien'],
-                                "antrean": t['queue_number']
-                            }
-                            buf = io.BytesIO()
-                            generate_qr(qr_data).save(buf, format="PNG")
-                            st.image(buf, use_container_width=True)
-                            st.caption(f"ID: {t['id']}")
-                        
-                        with cI:
-                            st.subheader(f"{t['queue_number']}")
-                            
-                            # Status Badge
-                            status = t['status_pelayanan']
-                            if status == "Menunggu": st.warning(f"🕒 {status}")
-                            elif status == "Sedang Dilayani": st.success(f"🔊 {status}")
-                            elif status == "Selesai": st.info(f"✅ {status}")
-                            else: st.markdown(f"📝 **{status}**")
+        
+        # [BARU] Layout Kolom untuk Nama & Tanggal
+        c_cari1, c_cari2 = st.columns([3, 2])
+        
+        with c_cari1:
+            snm = st.text_input("Masukkan Nama Pasien", key="src_nm", placeholder="Contoh: Budi")
+            
+        with c_cari2:
+            # Checkbox agar user bisa memilih mau filter tanggal atau tidak
+            filter_tgl = st.checkbox("Filter Tanggal Kunjungan")
+            # Input Tanggal (Aktif jika checkbox dicentang)
+            tgl_cari = st.date_input("Pilih Tanggal", value=datetime.today(), disabled=not filter_tgl, label_visibility="collapsed")
 
-                            st.divider()
-                            st.markdown(f"**Pasien:** {t['nama_pasien']}")
-                            st.markdown(f"**Poli:** {t['poli']}")
-                            st.markdown(f"**Dokter:** {t['dokter']}")
-                            st.caption(f"📅 {t['visit_date']}")
-            else: 
-                st.warning("Tiket tidak ditemukan. Cek kembali nama Anda.")
+        if st.button("Cari Tiket", use_container_width=True, type="primary"):
+            if not snm.strip():
+                st.warning("⚠️ Harap isi nama pasien.")
+            else:
+                # [BARU] Logika Parameter
+                params = {"nama": snm}
+                if filter_tgl:
+                    params["target_date"] = str(tgl_cari)
+
+                try:
+                    r = requests.get(f"{API_URL}/public/find-ticket", params=params)
+                    
+                    if r.status_code == 200:
+                        results = r.json()
+                        st.success(f"Ditemukan {len(results)} tiket.")
+                        
+                        for t in results:
+                            with st.container(border=True):
+                                cQ, cI = st.columns([1, 4])
+                                with cQ:
+                                    # Generate QR Code
+                                    qr_data = {"id": t['id'], "nama": t['nama_pasien'], "antrean": t['queue_number']}
+                                    buf = io.BytesIO()
+                                    generate_qr(qr_data).save(buf, format="PNG")
+                                    st.image(buf, use_container_width=True)
+                                
+                                with cI:
+                                    st.subheader(f"{t['queue_number']}")
+                                    
+                                    # Status Badge
+                                    status = t['status_pelayanan']
+                                    if status == "Menunggu": st.warning(f"🕒 {status}")
+                                    elif status == "Sedang Dilayani": st.success(f"🔊 {status}")
+                                    elif status == "Selesai": st.info(f"✅ {status}")
+                                    else: st.markdown(f"📝 **{status}**")
+
+                                    st.divider()
+                                    st.markdown(f"**Pasien:** {t['nama_pasien']}")
+                                    st.markdown(f"**Poli:** {t['poli']} | **Dokter:** {t['dokter']}")
+                                    st.caption(f"📅 {t['visit_date']}")
+                    else: 
+                        st.warning("Tiket tidak ditemukan. Cek kembali nama atau tanggal.")
+                except Exception as e:
+                    st.error(f"Gagal mencari: {e}")
 
 # =================================================================
 # 2. SCANNER (AUTO-PROCESS MODE)
