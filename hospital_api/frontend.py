@@ -8,7 +8,7 @@ import io
 import cv2
 import numpy as np
 import json
-import plotly.express as px  # Library Chart Baru
+import plotly.express as px  
 
 # --- KONFIGURASI ---
 API_URL = "http://127.0.0.1:8000"
