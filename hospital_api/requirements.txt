@@ -14,3 +14,5 @@ pillow
 opencv-python-headless
 plotly
 faker
+wordcloud 
+matplotlib
