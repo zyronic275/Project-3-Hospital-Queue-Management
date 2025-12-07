@@ -1,4 +1,4 @@
-fastapi
+fastapi[standard]
 uvicorn
 sqlalchemy
 pymysql
@@ -12,3 +12,7 @@ requests
 qrcode
 pillow
 opencv-python-headless
+plotly
+faker
+wordcloud 
+matplotlib
