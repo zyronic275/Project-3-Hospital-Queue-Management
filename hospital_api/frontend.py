@@ -563,7 +563,7 @@ elif menu == "📈 Analisis Data":
                 c_peak, c_staff = st.columns(2)
                 
                 with c_peak:
-                    st.subheader("⏰ Tren Jam Kedatangan")
+                    st.subheader("⏰ Persebaran Jam Kedatangan")
                     if d['peak_hours']:
                         df_peak = pd.DataFrame(list(d['peak_hours'].items()), columns=['Jam', 'Jumlah'])
                         # PERBAIKAN GRAFIK JUGA (Supaya sinkron)
