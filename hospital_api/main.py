@@ -8,9 +8,9 @@ import re
 import random
 from faker import Faker 
 
-import storage
-import schemas
-import csv_utils
+from hospital_api import storage
+from hospital_api import schemas
+from hospital_api import csv_utils
 
 storage.init_db()
 
