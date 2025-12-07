@@ -16,3 +16,6 @@ plotly
 faker
 wordcloud 
 matplotlib
+python-jose[cryptography]
+argon2-cffi
+python-multipart

@@ -132,6 +132,10 @@ class PoliSchema(BaseModel):
     poli: str; prefix: str
     model_config = ConfigDict(from_attributes=True)
 
+class PoliUpdate(BaseModel):
+    new_name: Optional[str] = None
+    new_prefix: Optional[str] = None
+
 class DoctorSchema(BaseModel):
     doctor_id: int; dokter: str; poli: str; doctor_code: str
     practice_start_time: time; practice_end_time: time; max_patients: int
@@ -152,3 +156,21 @@ class ClinicStats(BaseModel):
     poli_name: str; total_doctors: int; total_patients_today: int
     patients_waiting: int; patients_being_served: int; patients_finished: int
     model_config = ConfigDict(from_attributes=True)
+
+# --- AUTH SCHEMAS ---
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    nama_lengkap: str
+    role: str = "pasien" # Default pasien
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    role: str
+    nama: str
+    status_member: Optional[str] = "Reguler"
