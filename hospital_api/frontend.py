@@ -779,12 +779,6 @@ else:
             # --- 6. KORELASI (SCATTER PLOT SIMPLE) ---
             st.subheader("6. Analisis Korelasi (Kepadatan vs Kecepatan)")
             st.info(f"Nilai Korelasi Pearson: **{d['correlation']}**")
-            if d['correlation'] > 0:
-                st.write("👉 **Interpretasi:** Saat pasien ramai, dokter cenderung melambat (Kelelahan).")
-            elif d['correlation'] < 0:
-                st.write("👉 **Interpretasi:** Saat pasien ramai, dokter bekerja lebih cepat (Efisiensi Tinggi).")
-            else:
-                st.write("👉 **Interpretasi:** Tidak ada hubungan signifikan antara jumlah antrean dan kecepatan.")
 
             # --- 7. TEXT MINING (WORD CLOUD) ---
             st.subheader("7. Penambangan Teks Diagnosa (Word Cloud)")
