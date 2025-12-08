@@ -8,6 +8,8 @@ def reset():
         conn.execute(text("DROP TABLE IF EXISTS tabel_pelayanan_normal"))
         conn.execute(text("DROP TABLE IF EXISTS tabel_dokter_normal"))
         conn.execute(text("DROP TABLE IF EXISTS tabel_poli_normal"))
+        conn.execute(text("DROP TABLE IF EXISTS tabel_users"))
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
         conn.commit()
     
     print("Membuat database baru...")
