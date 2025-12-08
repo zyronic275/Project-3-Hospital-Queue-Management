@@ -183,7 +183,6 @@ class UserCreate(BaseModel):
     username: str
     password: str
     nama_lengkap: str
-    role: Optional[str] = "pasien"
 
     # Validator Nama Lengkap (Trim + Title Case) -> TEMPATNYA DI SINI
     @field_validator('nama_lengkap')
