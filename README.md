@@ -1,45 +1,91 @@
-# 🏥 Sistem Manajemen Antrean Pasien Rumah Sakit (FastAPI)
+# Sistem Manajemen RS Pintar (Full-Stack + Auth)
 
-Proyek ini adalah implementasi sistem *Manajemen Antrean Pasien* berbasis *API* yang dibangun menggunakan framework *FastAPI* yang cepat dan modern. Sistem ini dirancang untuk mempermudah proses pendaftaran pasien, pengelolaan alur antrean oleh staf medis, serta pencatatan riwayat kunjungan di lingkungan rumah sakit.
+Sistem manajemen antrean dan operasional rumah sakit berbasis Full-Stack
+Python. Proyek ini telah ditingkatkan dari sekadar pembaca CSV menjadi
+aplikasi berbasis Database (MySQL) dengan sistem Autentikasi (Login) dan
+Otorisasi Bertingkat (Role-Based).
 
----
+Sistem ini memisahkan logika bisnis (Backend API) dengan antarmuka
+pengguna (Frontend Dashboard), dan menggunakan file CSV lama sebagai
+referensi data arsip.
 
-## 🎯 Tujuan Utama
+## 🚀 Fitur Utama (Pembaruan)
 
-Sistem ini bertujuan untuk menyediakan solusi API yang efisien dan andal, mendukung fungsi-fungsi berikut:
+-   🔐 **Keamanan Terintegrasi**: Sistem Login menggunakan JWT dengan
+    enkripsi password.
+-   👤 **Multi-Role User**: Akses berbeda untuk Admin, Dokter, Perawat,
+    Administrasi, dan Pasien.
+-   🗄️ **Database Persistent**: Data disimpan di MySQL via SQLAlchemy.
+-   📊 **Dashboard Real-time**: Visualisasi antrean dan analitik.
 
-1.  *Pendaftaran Otomatis: Pasien dapat mendaftar dan secara otomatis mendapatkan **nomor antrean yang berurutan* berdasarkan waktu pendaftaran.
-2.  *Manajemen Master Data: Memungkinkan Admin rumah sakit untuk **menambah, memperbarui, dan menghapus* data dokter dan klinik.
-3.  *Alur Pelayanan: Dokter atau tenaga medis dapat **memanggil pasien, memperbarui **status pelayanan* (misalnya: menunggu, dilayani, selesai), dan *mencatat hasil kunjungan* pasien.
-4.  *Pemantauan: Rumah sakit dapat **memantau riwayat kunjungan* dan *kepadatan antrean* di setiap klinik secara real-time.
+## 🏗️ Struktur Proyek Baru
 
----
+    ├── main.py                   # Backend FastAPI
+    ├── frontend.py               # Frontend Streamlit
+    ├── storage.py                # MySQL ORM Models
+    ├── security.py               # Password hashing & JWT
+    ├── schemas.py                # Pydantic models
+    ├── init_users.py             # Membuat user default
+    ├── reset_db.py               # Reset database
+    ├── csv_utils.py              # CSV helper
+    ├── requirements.txt
+    ├── tabel_dokter_normal.csv
+    ├── tabel_poli_normal.csv
+    └── tabel_pelayanan_normal.csv
 
-## ⚙ Fitur Kunci
+## 🛠️ Persiapan Awal (Database Setup)
 
-| Ikon | Fitur | Deskripsi |
+### 1. Instalasi
+
+Pastikan Python & MySQL sudah terinstal.
+
+    pip install -r requirements.txt
+
+### 2. Inisialisasi Database
+
+Reset & buat tabel kosong:
+
+    python reset_db.py
+
+Buat akun staf & admin:
+
+    python init_users.py
+
+## ⚡ Cara Menjalankan Aplikasi
+
+### Terminal 1 (Backend API):
+
+    fastapi dev main.py
+
+### Terminal 2 (Frontend):
+
+    streamlit run frontend.py
+
+## 🔑 Akun Default
+
+Password default: **123**
+
+| Role | Username | Akses |
 | :---: | :--- | :--- |
-| 📋 | *Pendaftaran & Penomoran Otomatis* | Pasien didaftarkan dan mendapatkan nomor antrean secara otomatis. |
-| 🧑‍⚕ | *Manajemen Master Data (CRUD)* | Pengelolaan data dokter dan klinik. |
-| ⏱ | *Pembaruan Status Antrean* | Mengubah status antrean pasien (menunggu, dilayani, selesai). |
-| 🩺 | *Pencatatan Hasil Kunjungan* | Endpoint untuk mencatat diagnosis atau hasil pelayanan medis. |
-| 📊 | *Pemantauan Riwayat & Statistik* | Melihat riwayat kunjungan dan statistik kepadatan antrean per klinik. |
+| Super Admin | admin | Akses penuh |
+| Administrasi | admin_depan | Pendaftaran & antrean
+| Perawat | perawat | Manajemen status pasien
 
----
 
-## 🧪 Pengujian dan Dokumentasi
+## 📚 Dokumentasi API
 
-Semua endpoint API dirancang dengan fokus pada kualitas dan kemudahan penggunaan:
+Buka:
 
-* *Unit Test: Seluruh *endpoint *dilengkapi dengan *unit test** untuk menjamin fungsionalitas berjalan dengan benar dan stabil.
-* *Dokumentasi Otomatis: API **dapat diuji langsung* melalui interface interaktif *Swagger UI* (/docs) dan *Redoc* (/redoc) yang disediakan otomatis oleh FastAPI.
-    * *Akses dokumentasi setelah server berjalan di: http://127.0.0.1:8000/docs*
+    http://127.0.0.1:8000/docs
 
----
+Endpoint tersedia:
 
-## ⚠ Batasan Implementasi
+-   `/auth/token`
+-   `/admin/*`
+-   `/ops/*`
+-   `/monitor/*`
 
-Penting untuk dicatat bahwa proyek ini adalah implementasi API dasar untuk tujuan studi/prototyping dan memiliki batasan berikut:
+## ⚠️ Catatan Penting
 
-* *Data Non-Persistent: **Tidak menggunakan database relasional* atau NoSQL. Data *hanya disimpan sementara* menggunakan struktur data sederhana (list dan dictionary) selama server berjalan. *Data akan hilang* setelah server dihentikan.
-* *Tanpa Autentikasi: **Tidak mengimplementasikan mekanisme autentikasi* (seperti JWT atau Basic Auth) untuk menjaga fokus pada alur bisnis inti manajemen antrean.
+1.  Pastikan kredensial MySQL benar di `storage.py`.
+2.  File CSV sekarang hanya berfungsi sebagai data awal dan arsip.

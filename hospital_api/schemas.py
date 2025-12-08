@@ -128,6 +128,15 @@ class ScanRequest(BaseModel):
 class MedicalNoteUpdate(BaseModel):
     catatan: str = Field(..., min_length=3, description="Hasil diagnosa atau catatan dokter")
 
+    # --- TAMBAHKAN BAGIAN INI (CONFIG DENGAN CONTOH) ---
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "catatan": "Pasien mengalami flu ringan. Diberikan resep Paracetamol 3x1."
+            }
+        }
+    )
+
 class PoliSchema(BaseModel):
     poli: str; prefix: str
     model_config = ConfigDict(from_attributes=True)
@@ -158,15 +167,33 @@ class ClinicStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # --- AUTH SCHEMAS ---
+
 class UserLogin(BaseModel):
     username: str
     password: str
+
+# HAPUS validator 'clean_nama' dari sini jika ada!
+    # Validator ini hanya boleh ada di UserLogin:
+    @field_validator('username', 'password')
+    def clean_credentials(cls, v, info):
+        return validate_not_empty(v, info.field_name)
+
 
 class UserCreate(BaseModel):
     username: str
     password: str
     nama_lengkap: str
-    role: str = "pasien" # Default pasien
+
+    # Validator Nama Lengkap (Trim + Title Case) -> TEMPATNYA DI SINI
+    @field_validator('nama_lengkap')
+    def clean_nama(cls, v):
+        v = validate_not_empty(v, "Nama Lengkap")
+        return v.title() 
+
+    # Validator Username & Password
+    @field_validator('username', 'password')
+    def clean_credentials(cls, v, info):
+        return validate_not_empty(v, info.field_name)
 
 class Token(BaseModel):
     access_token: str
@@ -174,3 +201,36 @@ class Token(BaseModel):
     role: str
     nama: str
     status_member: Optional[str] = "Reguler"
+
+class TicketCreate(BaseModel):
+    nama_pasien: str
+    poli: str
+    doctor_id: int
+    visit_date: str # Format YYYY-MM-DD
+    username_pasien: Optional[str] = None
+
+    # KHUSUS NAMA PASIEN: Trim + Title Case
+    @field_validator('nama_pasien')
+    def clean_nama(cls, v):
+        # 1. Cek kosong & Trim spasi
+        v = validate_not_empty(v, "Nama Pasien")
+        # 2. Ubah jadi Huruf Besar di awal kata (gibran raka -> Gibran Raka)
+        return v.title()
+
+    # KHUSUS POLI: Cukup Trim (karena poli biasanya dipilih dari dropdown, formatnya sudah tetap)
+    @field_validator('poli')
+    def clean_poli(cls, v):
+        return validate_not_empty(v, "Poli")
+    
+    # --- TAMBAHKAN CONTOH DI SINI ---
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "nama_pasien": "Budi Santoso",
+                "poli": "Poli Umum",
+                "doctor_id": 1,
+                "visit_date": "2023-12-31",
+                "username_pasien": "budi123"
+            }
+        }
+    )
