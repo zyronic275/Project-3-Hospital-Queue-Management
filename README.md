@@ -1,4 +1,4 @@
-# Sistem Manajemen RS Pintar (Full-Stack + Auth)
+# Sistem Manajemen RS Pintar
 
 Sistem manajemen antrean dan operasional rumah sakit berbasis Full-Stack
 Python. Proyek ini telah ditingkatkan dari sekadar pembaca CSV menjadi
