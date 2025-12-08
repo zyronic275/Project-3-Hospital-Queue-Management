@@ -203,19 +203,10 @@ class Token(BaseModel):
     status_member: Optional[str] = "Reguler"
 
 class TicketCreate(BaseModel):
-    nama_pasien: str
     poli: str
     doctor_id: int
-    visit_date: str # Format YYYY-MM-DD
-    username_pasien: Optional[str] = None
-
-    # KHUSUS NAMA PASIEN: Trim + Title Case
-    @field_validator('nama_pasien')
-    def clean_nama(cls, v):
-        # 1. Cek kosong & Trim spasi
-        v = validate_not_empty(v, "Nama Pasien")
-        # 2. Ubah jadi Huruf Besar di awal kata (gibran raka -> Gibran Raka)
-        return v.title()
+    username_pasien: Optional[str] = None # Tetap ada untuk Petugas/Admin
+    visit_date: str
 
     # KHUSUS POLI: Cukup Trim (karena poli biasanya dipilih dari dropdown, formatnya sudah tetap)
     @field_validator('poli')

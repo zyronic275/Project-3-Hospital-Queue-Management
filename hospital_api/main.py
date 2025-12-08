@@ -580,13 +580,9 @@ def get_avail_docs(poli_name: str, db: Session = Depends(get_db)):
 @router_public.post("/submit")
 def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_user: dict = Depends(security.get_current_user_token)):
     
-    # --- 1. LOGIKA PENENTUAN PASIEN & NAMA (STRICT) ---
-    
-    # Default: Ambil data user yang sedang login
+    # --- 1. LOGIKA PENENTUAN PASIEN & NAMA ---
     user_log = db.query(storage.TabelUser).filter(storage.TabelUser.username == current_user['username']).first()
-    
     target_username = user_log.username
-    # Default: Nama di tiket harus sama dengan nama akun (agar konsisten)
     final_nama_pasien = user_log.nama_lengkap 
 
     # KONDISI KHUSUS: Jika yang login adalah PETUGAS (Admin/Perawat)
@@ -594,35 +590,45 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
         if p.username_pasien:
             target_search = p.username_pasien.lower().strip()
             pasien_db = db.query(storage.TabelUser).filter(storage.TabelUser.username == target_search).first()
-            if not pasien_db:
-                raise HTTPException(status_code=404, detail=f"Username pasien '{p.username_pasien}' tidak ditemukan.")
+            if not pasien_db: raise HTTPException(status_code=404, detail=f"Username pasien '{p.username_pasien}' tidak ditemukan.")
             
-            # Petugas mendaftarkan orang lain
             target_username = pasien_db.username
-            final_nama_pasien = pasien_db.nama_lengkap # Ambil nama asli dari database pasien tersebut
+            final_nama_pasien = pasien_db.nama_lengkap 
         else:
-            # Jika petugas lupa isi username target, tolak
             raise HTTPException(status_code=400, detail="Petugas WAJIB memasukkan 'Username Pasien' yang sudah terdaftar.")
     
-    # ---------------------------------------------------------
-
     # 2. VALIDASI TANGGAL
+    # ... (Validasi Tanggal Lama dan Baru tetap sama) ...
     try:
         q_date = datetime.strptime(p.visit_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(400, "Format tanggal salah (Gunakan YYYY-MM-DD)")
 
-    # 3. VALIDASI TANGGAL MASA LAMPAU
     if q_date < date.today():
-        raise HTTPException(400, f"Tanggal tidak valid! Tidak bisa daftar untuk tanggal lampau ({q_date}).")
+        raise HTTPException(status_code=400, detail=f"Tanggal tidak valid! Tidak bisa mendaftar untuk tanggal masa lalu ({q_date}).")
 
-    # 4. CEK JAM PRAKTEK (Khusus Hari Ini)
+    # 3. VALIDASI DOKTER & POLI
     doc = db.query(storage.TabelDokter).filter(storage.TabelDokter.doctor_id == p.doctor_id).first()
     if not doc: raise HTTPException(404, "Dokter tidak ditemukan")
     
+    pol = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == p.poli).first()
+    if not pol: raise HTTPException(404, "Poli tidak ditemukan")
+
+    # --- [FIX KRITIS: CEK ASOSIASI DOKTER & POLI] ---
+    if doc.poli != p.poli:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Asosiasi salah! Dokter '{doc.dokter}' bertugas di '{doc.poli}', bukan di '{p.poli}'."
+        )
+    # ------------------------------------------------
+
+    # 4. CEK JAM PRAKTEK (Khusus Hari Ini)
     if q_date == date.today():
-        if datetime.now().time() > doc.practice_end_time:
-             raise HTTPException(400, f"Pendaftaran Gagal! Jam praktek dokter berakhir pukul {doc.practice_end_time.strftime('%H:%M')}.")
+        current_time = datetime.now().time()
+        if current_time > doc.practice_end_time:
+             raise HTTPException(400, detail=f"Pendaftaran Gagal! Jam praktek dokter sudah berakhir pada pukul {doc.practice_end_time.strftime('%H:%M')}.")
+
+    # ... (Validasi tiket, kuota, dan simpan data di bawahnya tetap sama) ...
 
     # 5. VALIDASI SATU TIKET PER HARI
     existing_ticket = db.query(storage.TabelPelayanan).filter(
@@ -631,21 +637,18 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
     ).first()
     
     if existing_ticket:
-        raise HTTPException(400, detail=f"Pasien '{target_username}' sudah memiliki tiket untuk tanggal {q_date}.")
+        raise HTTPException(status_code=400, detail=f"Pasien '{target_username}' sudah memiliki tiket antrean untuk tanggal {q_date}.")
 
-    # 6. VALIDASI KUOTA
+    # 6. VALIDASI KUOTA DOKTER
     current_patient_count = db.query(storage.TabelPelayanan).filter(
         storage.TabelPelayanan.doctor_id_ref == p.doctor_id,
         storage.TabelPelayanan.visit_date == q_date
     ).count()
 
     if current_patient_count >= doc.max_patients:
-        raise HTTPException(400, detail=f"Kuota Dokter Penuh! Maksimal {doc.max_patients} pasien per hari.")
+        raise HTTPException(status_code=400, detail=f"Kuota Dokter Penuh! Maksimal {doc.max_patients} pasien per hari.")
 
-    # 7. CARI POLI & GENERATE NOMOR
-    pol = db.query(storage.TabelPoli).filter(storage.TabelPoli.poli == p.poli).first()
-    if not pol: raise HTTPException(404, "Poli tidak ditemukan")
-
+    # 7. GENERATE NOMOR & SIMPAN
     seq = current_patient_count + 1
     try: suf = doc.doctor_code.split('-')[-1]
     except: suf = "001"
@@ -657,11 +660,10 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
     ).count()
     stat_mem = "Pasien Lama" if cnt_history > 0 else "Pasien Baru"
     
-    # 8. SIMPAN DATA (GUNAKAN final_nama_pasien)
     new_t = storage.TabelPelayanan(
         username=target_username,
         status_member=stat_mem, 
-        nama_pasien=final_nama_pasien, # <--- PAKAI NAMA DARI DB (OTOMATIS)
+        nama_pasien=final_nama_pasien, # Menggunakan nama dari DB
         poli=p.poli, 
         dokter=doc.dokter, 
         doctor_id_ref=doc.doctor_id, 
@@ -674,7 +676,7 @@ def submit_reg(p: schemas.TicketCreate, db: Session = Depends(get_db), current_u
     
     gab = storage.TabelGabungan(
         username=target_username, status_member=stat_mem,
-        nama_pasien=final_nama_pasien, # <--- PAKAI NAMA DARI DB
+        nama_pasien=final_nama_pasien, # Menggunakan nama dari DB
         poli=p.poli, prefix_poli=pol.prefix,
         dokter=doc.dokter, doctor_code=doc.doctor_code, doctor_id=doc.doctor_id,
         visit_date=q_date, status_pelayanan="Terdaftar",
