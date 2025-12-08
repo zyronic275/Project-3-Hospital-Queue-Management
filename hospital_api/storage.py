@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Date, Time, DateTime, ForeignKey
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
+import datetime
+from datetime import datetime
 
 load_dotenv()
 
@@ -24,7 +26,9 @@ def init_db():
 class TabelPoli(Base):
     __tablename__ = "tabel_poli_normal"
     poli = Column(String(100), primary_key=True, index=True)
-    prefix = Column(String(10))
+    
+    prefix = Column(String(10), unique=True) 
+    
     dokters = relationship("TabelDokter", back_populates="poli_rel")
 
 class TabelDokter(Base):
@@ -42,6 +46,7 @@ class TabelDokter(Base):
 class TabelPelayanan(Base):
     __tablename__ = "tabel_pelayanan_normal"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(50), index=True)
     nama_pasien = Column(String(100))
     poli = Column(String(100))
     dokter = Column(String(100))
@@ -51,13 +56,18 @@ class TabelPelayanan(Base):
     clinic_entry_time = Column(DateTime, nullable=True)
     completion_time = Column(DateTime, nullable=True)
     status_pelayanan = Column(String(50))
-    queue_number = Column(String(50))  # String: GIGI-001-001
-    queue_sequence = Column(Integer)   # Integer: 1
+    queue_number = Column(String(50))
+    queue_sequence = Column(Integer)
+    # [BARU] Kolom Catatan Medis
+    catatan_medis = Column(String(255), nullable=True)
+    status_member = Column(String(20))
+    
     dokter_rel = relationship("TabelDokter", back_populates="pelayanans")
 
 class TabelGabungan(Base):
     __tablename__ = "tabel_gabungan_transaksi"
     id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), index=True)
     nama_pasien = Column(String(100))
     poli = Column(String(100))
     prefix_poli = Column(String(10))
@@ -71,3 +81,15 @@ class TabelGabungan(Base):
     status_pelayanan = Column(String(50))
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
+    
+    # [BARU] Kolom Catatan Medis (untuk Analytics)
+    catatan_medis = Column(String(255), nullable=True)
+    status_member = Column(String(20))
+
+class TabelUser(Base):
+    __tablename__ = "tabel_users"
+    username = Column(String(50), primary_key=True, index=True)
+    password = Column(String(255))
+    role = Column(String(20)) # 'admin', 'dokter', 'pasien'
+    nama_lengkap = Column(String(100))
+    created_at = Column(DateTime, default=datetime.utcnow)

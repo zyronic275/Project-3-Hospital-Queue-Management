@@ -1,4 +1,4 @@
-fastapi
+fastapi[standard]
 uvicorn
 sqlalchemy
 pymysql
@@ -9,8 +9,13 @@ numpy
 pydantic
 streamlit
 requests
-pytest
-httpx
 qrcode
 pillow
 opencv-python-headless
+plotly
+faker
+wordcloud 
+matplotlib
+python-jose[cryptography]
+argon2-cffi
+python-multipart
