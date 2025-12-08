@@ -8,7 +8,7 @@ def init_users_final():
         
         staff_list = [
             # 1. ADMIN (Bisa Semua)
-            {"username": "admin", "nama": "Super Admin", "role": "super_admin"},
+            {"username": "admin", "nama": "Super Admin", "role": "admin"},
             
             # 2. PERAWAT (Scanner + Ruang Periksa)
             {"username": "perawat", "nama": "Ns. Melati", "role": "perawat"},
