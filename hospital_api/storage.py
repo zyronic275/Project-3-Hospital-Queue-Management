@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Date, Time, DateTime, ForeignKey
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
+import datetime
+from datetime import datetime
 
 load_dotenv()
 
@@ -44,6 +46,7 @@ class TabelDokter(Base):
 class TabelPelayanan(Base):
     __tablename__ = "tabel_pelayanan_normal"
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(50), index=True)
     nama_pasien = Column(String(100))
     poli = Column(String(100))
     dokter = Column(String(100))
@@ -55,15 +58,16 @@ class TabelPelayanan(Base):
     status_pelayanan = Column(String(50))
     queue_number = Column(String(50))
     queue_sequence = Column(Integer)
-    
     # [BARU] Kolom Catatan Medis
     catatan_medis = Column(String(255), nullable=True)
+    status_member = Column(String(20))
     
     dokter_rel = relationship("TabelDokter", back_populates="pelayanans")
 
 class TabelGabungan(Base):
     __tablename__ = "tabel_gabungan_transaksi"
     id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), index=True)
     nama_pasien = Column(String(100))
     poli = Column(String(100))
     prefix_poli = Column(String(10))
@@ -80,3 +84,12 @@ class TabelGabungan(Base):
     
     # [BARU] Kolom Catatan Medis (untuk Analytics)
     catatan_medis = Column(String(255), nullable=True)
+    status_member = Column(String(20))
+
+class TabelUser(Base):
+    __tablename__ = "tabel_users"
+    username = Column(String(50), primary_key=True, index=True)
+    password = Column(String(255))
+    role = Column(String(20)) # 'admin', 'dokter', 'pasien'
+    nama_lengkap = Column(String(100))
+    created_at = Column(DateTime, default=datetime.utcnow)
