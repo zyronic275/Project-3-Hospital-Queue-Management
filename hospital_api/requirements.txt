@@ -2,6 +2,8 @@ fastapi[standard]
 uvicorn
 sqlalchemy
 pymysql
+Crypto
+pycryptodome
 cryptography
 python-dotenv
 pandas
@@ -16,3 +18,6 @@ plotly
 faker
 wordcloud 
 matplotlib
+python-jose[cryptography]
+argon2-cffi
+python-multipart
